@@ -35,35 +35,57 @@ export function buildArticlePrompt(
 
   const transcript = segments.join('\n\n---\n\n')
 
-  return `Write a session paper (blog article) summarizing this AI coding session.
+  return `你是一个技术博客作者。你的写作风格参考以下真实博客：
 
-## Structure
-- **Title**: Concise, descriptive (Chinese OK, technical terms in English)
-- **Summary**: 2-3 sentences capturing what was accomplished and key decisions
-- **Body**: Full markdown article with these sections:
-  - 🎯 目标 — What the session set out to do
-  - 🛠️ 过程 — Narrative of what happened (decisions, problems, solutions)
-  - 💡 关键洞察 — Non-obvious things learned
-  - 📊 成果 — What was delivered
-  - 🔮 Next Steps — What's left to do
-- **Tags**: 3-8 relevant tags
-- **Project**: Primary project name
+## 写作风格参考
 
-## Rules
-- Write in the session's language (Chinese + English technical terms)
-- Be specific — include file paths, command outputs, error messages where relevant
-- Focus on WHY decisions were made, not just WHAT was done
-- Include code snippets if they illustrate a key point
-- Tone: technical blog post, not academic paper
+**开头**：永远以一个具体场景或问题开始，不是抽象总结。让读者一秒代入。
+- ✅ "第一次发现 AI review 在偷懒，是在它说了一句 'Code looks correct' 之后。"
+- ✅ "每个用 AI coding agent 的人都遇到过这个场景：你在 session A 花了 20 分钟教 agent 一个 bug pattern..."
+- ❌ "本文介绍了我们如何构建 Session Brain..."
+- ❌ "用 OPC loop 驱动，在一个 session 里完成了..."
+
+**有观点、有 spine**：敢下判断，敢说"这是过度工程"、"我不会假装这是什么突破"、"这不是 bug，你没法 fix 一个架构特性"。不要四平八稳的废话。
+
+**诚实**：展示 trade-off，承认不完美。"OPC 找的 code bug 更少——但抓到了 5 个 Claude 完全看不到的东西"。不要只说好的。
+
+**有结构但不机械**：用 ## 分段，但每个 section 之间有叙事逻辑，不是并列 bullet list。用 --- 做视觉呼吸。代码块、架构图、表格穿插在叙事中，不是堆在最后。
+
+**中英混排自然**：技术名词英文（context window、satisfice、attention decay、pre-commit hooks），叙事中文。不翻译专有名词。
+
+**有温度**：偶尔有个人口吻 — "省事 = 会真正用起来"、"被 failure mode 逼出来的"。不是冷冰冰的文档。
+
+**具体**：给 file path、给 error message、给数字。"67 个 vitest 单元测试 + 12 个 Playwright E2E 测试"比"全面的测试覆盖"好 10 倍。
+
+## Anti-patterns（绝对不要）
+
+- 不要用 emoji 做 section header（❌ "🎯 目标"、"🛠️ 过程"）。用正常的 ## 标题。
+- 不要写 bullet list 摘要（❌ "包括 pipeline 移植、UI 构建、测试、部署"）。写有温度的叙事。
+- 不要总结式开头（❌ "本文介绍..."、"这篇文章讲述了..."）。
+- 不要 generic praise（❌ "这是一个很好的方案"）。说为什么好，或者说哪里不够好。
+- 不要假装完美。如果 session 中途改了方向、踩了坑、做了妥协——写出来，那才是有价值的。
+
+## Task
+
+基于下面的 session transcript，写一篇技术博客文章。
+
+**文章结构（参考，不是死板模板）**：
+1. 开头：一个具体场景引入（从 transcript 里找最有戏剧性的瞬间）
+2. 背景：为什么要做这件事
+3. 过程叙事：怎么做的（包括走弯路、改方向、踩坑）
+4. 关键 insight：做完之后回头看，最值得记住的几件事
+5. 结尾：诚实评价 + 下一步
+
+**不要照搬上面的 section 名称。根据内容自然分段。**
 
 ## Output format (JSON)
 \`\`\`json
 {
-  "title": "...",
-  "summary": "...",
-  "body": "... (markdown) ...",
-  "tags": ["..."],
-  "project": "..."
+  "title": "一句话标题，要有hook感",
+  "summary": "2-3 句话，像 blog 的 description meta tag，让人想点进来",
+  "body": "完整的 markdown 文章（1500-3000 字）",
+  "tags": ["tag1", "tag2", ...],
+  "project": "primary-project-name"
 }
 \`\`\`
 
@@ -78,7 +100,7 @@ export function buildArticlePrompt(
 
 ${transcript}
 
-Write the session paper now. Output ONLY the JSON object.`
+写文章。只输出 JSON object，不要其他内容。`
 }
 
 /**
