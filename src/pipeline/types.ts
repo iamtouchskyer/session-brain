@@ -72,6 +72,30 @@ export interface SessionArticle {
     entries: number
     messages: number
     chunks: number
+    // Rich stats from session-recap parser
+    tokens?: {
+      input: number
+      output: number
+      cache_creation: number
+      cache_read: number
+      total: number
+    }
+    llmCalls?: number
+    modelsUsed?: string[]
+    toolCalls?: {
+      total: number
+      byType: Record<string, number>
+    }
+    subagents?: {
+      count: number
+      agents: Array<{ type: string; description: string }>
+    }
+    filesTouched?: string[]
+    costEstimate?: {
+      total_cost: number
+      currency: string
+    }
+    durationMinutes?: number
   }
 }
 

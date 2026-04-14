@@ -1,6 +1,22 @@
+import { execFileSync } from 'child_process'
 import { parseJsonl, extractMessages } from './parse'
 import { chunkByConversation, scoreChunk, filterChunks } from './chunk'
 import { buildExtractionPrompt, buildArticlePrompt } from './prompt'
+
+const STATS_SCRIPT = `${process.env.HOME}/.claude/skills/session-recap/scripts/extract-session-stats.py`
+
+function extractRichStats(jsonlPath: string): Record<string, unknown> | null {
+  try {
+    const out = execFileSync('python3', [STATS_SCRIPT, '--jsonl', jsonlPath], {
+      encoding: 'utf-8',
+      timeout: 30000,
+    })
+    return JSON.parse(out)
+  } catch {
+    console.error('Warning: session-recap stats extraction failed, continuing without rich stats')
+    return null
+  }
+}
 
 type Mode = 'article' | 'cards'
 
@@ -59,6 +75,13 @@ function main() {
     `Signal chunks: ${filtered.length} / ${chunks.length} (${Math.round((filtered.length / Math.max(chunks.length, 1)) * 100)}%)`,
   )
 
+  // Extract rich stats from session-recap parser
+  console.error('Extracting rich stats...')
+  const richStats = extractRichStats(jsonlPath)
+  if (richStats) {
+    console.error(`  Tokens: ${(richStats as any).tokens?.total?.toLocaleString() ?? '?'} | Cost: $${(richStats as any).cost_estimate?.total_cost ?? '?'} | Tools: ${(richStats as any).tool_calls?.total ?? '?'}`)
+  }
+
   const meta = {
     entries: entries.length,
     messages: messages.length,
@@ -66,6 +89,7 @@ function main() {
     signalChunks: filtered.length,
     startTime: messages[0]?.timestamp ?? '',
     endTime: messages[messages.length - 1]?.timestamp ?? '',
+    richStats,
   }
 
   if (filtered.length === 0) {

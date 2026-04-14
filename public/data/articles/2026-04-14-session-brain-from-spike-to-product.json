@@ -4,10 +4,208 @@
   "summary": "Session Brain 从一个 idea-factory 评估开始，四个 reviewer 全说 ITERATE，Devil's Advocate 直接说 spike 一张卡片都没产出。但最后我们还是花了 4 小时把它做成了一个可部署的产品。这篇文章记录了整个过程中的架构争论、方向修正、和那些 reviewer 说对了的地方。",
   "body": "四个 reviewer agent 的结果回来了，我盯着屏幕上的四行总结发呆。\n\nEngineer 说 filter 基本失效——95% pass rate，通过的 85 个 chunk 里 74 个是纯 tool output 噪音。Architect 说 extraction loop 没闭合，你连 LLM 都没调过。PM 说这不是 startup，是 personal tool，别自己骗自己。Devil's Advocate 最狠：**spike 从未产出一张卡片。311 行代码，结果只是生成了一个 375KB 的 prompt 文件。**\n\n四个都给了 ITERATE，没有一个 PASS。\n\n但我还是决定做了。因为 Devil's Advocate 说得对的那句话，恰好也是做下去的理由——compound effect 是 claim 不是 evidence，那就去找 evidence。\n\n---\n\n## 这个 idea 是怎么来的\n\n每个用 Claude Code 的人都有同一个痛点：session A 里花了 40 分钟摸清一个 bug pattern，session B 里 agent 又从头来过。JSONL transcript 里躺着几十 MB 的完整对话，但没有人——包括 agent 自己——能从里面高效地提取知识。\n\n我已经有了 memex（Zettelkasten 风格的原子卡片系统）和 session-recap（JSONL 统计 + infographic），但缺一个中间层：不是原子 insight，而是**每个 session 的完整叙事记录**。想象 memex card 是一条条推文，Session Brain 就是那篇长文——详细到你三个月后还能完整回忆那天的上下文。\n\n用 idea-factory pipeline 跑了一遍正式评估。9 个节点、4 个独立 reviewer，评分 32.5/40（HOT），但产品定位上被打了一顿。\n\n## 四个 Reviewer 教我的事\n\nEngineer review 指出了 spike 最明显的问题：filter 形同虚设。我写的 keyword filter 太宽泛，\"error\"、\"config\" 这种词在 tool output 里到处都是，导致 95% 的 chunk 都通过了，真正有 signal 的内容淹没在噪音里。375KB 的 prompt 塞给 LLM 不是 feature，是 bug。\n\nArchitect review 看得更深：317K 的 prompt 不是调参能解决的，需要 two-pass architecture。先粗筛，再精选，最后才喂 LLM。这是架构问题，不是参数问题。\n\n但最有价值的是 PM 和 Devil's Advocate。PM 直接说：market ceiling 是 150-225K 用户，这不是 market，是 persona。没有 moat——Anthropic 6-18 个月内大概率 ship native memory。变现能力为零——local-only CLI 写 markdown 文件，谁会付钱？\n\nDevil's Advocate 补了最后一刀：**spike 连 LLM 都没 call 过，一张 card 都没产出，compound effect 完全是 claim。** Previous reviews 都给了 PASS，但它们验证的是 pipeline architecture，不是 product hypothesis。\n\n这些判断全部正确。但结论不是 kill——是 \"别当 startup 做，当 personal tool 做。Dogfood 两周看 compound effect 是否 kick in。\"\n\n---\n\n## 方向在 brainstorm 里转了三次\n\n我最初的想法是：从 session JSONL 自动提取 memex cards。跑了 spike，filter 写了，chunking 做了，prompt 拼了。然后 reviewer 说：你连 LLM 都没调，你在验证什么？\n\n于是 close the loop。fix 了 filter（只看 user text，不看 tool output），从 95% pass rate 降到 33%。prompt 从 317K 降到 10K。调了 LLM，4 张卡片出来了。质量对比：top 2 张接近手动 memex-retro 的 80-85%，后两张偏泛。\n\n但用户（也就是我）说了一句话改变了整个方向：\n\n> \"我的意思是生成的 session summary 是非常 detailed 的内容，图文并茂的 md。\"\n\n我才意识到自己一直在做错的东西。用户要的不是 atomic cards——memex-retro 已经在做了。要的是**每个 session 的完整 narrative**，像一篇详细的日志，记录那天到底做了什么、怎么做的、遇到了什么坑。memex card 是推文，Session Brain 是长文。\n\n第三次转向发生在 UI 讨论时。最初想的是 `brain serve` 模式——和 memex serve 一样的 single-HTML local server。但这承载不了图文并茂的长文阅读体验，也没有云端方案。最终定的是：**Vite + React SPA，本地 dev server + Vercel 部署**，更像 blog 而不是 dashboard。\n\n---\n\n## 命名：从 Brain 到 Engram 再到 Session Brain\n\n\"Brain\" 太泛了，和一堆 \"second brain\" 工具撞名。brainstorm 了一轮，Engram（神经科学术语，记忆痕迹）是最精确的隐喻。但最终项目还是叫了 session-brain——因为 Engram 虽然优雅，但 session-brain 在 CLI 里一眼就知道是什么。有时候 clarity 比 elegance 重要。\n\n## 架构争论：独立系统 vs memex 增强\n\n这个争论花了不少时间。两个选项：\n\n**方案 A**：Session Brain 是 memex 的增强版，同一个知识网络里的不同粒度节点。\n\n**方案 B**：两个完全独立的系统，各有自己的 tag 系统、双链 graph、存储。\n\n引入了第十人（Devil's Advocate 角色）来攻击。第十人提出了第四方案：月度 append-only log + 被动结晶 cards，核心论点是 \"把知识管理当设计问题而不是行为问题是共同错误。能持续执行的粗糙系统 > 放弃的精密系统。\"\n\n这句话很锋利。但最终我 pushback 了——你要的不是知识管理系统的优化，你要的是 session 过程的完整保存。这是 recording 问题，不是 organization 问题。\n\n最终答案：**独立系统，flat files + Git repo**。两个产品 reuse 双链的逻辑，但各管各的。Brain doc 生成后就 done，不欠 memex 任何东西。如果 memex card 想 reference 一篇 brain doc 可以加 link，但不强制。\n\n---\n\n## OPC Loop：4 小时从 scaffold 到部署\n\n方向定了就开始执行。OPC loop 的 plan decomposition：\n\n```\nF1: Pipeline — parse JSONL → chunk → filter → prepare prompt\nF2: Data model + API\nF3: UI — article list + article reader (blog 风格)\nF4: Tests — vitest + Playwright + axe-core\nF5: Deploy — Vercel + skill integration\n```\n\nF1 是从 Python spike 移植到 TypeScript。这一步最有意思的 insight 是：**不需要 Anthropic API key**。spike 的设计是用 `@anthropic-ai/sdk` 单独调 API，但 Claude Code 自己就是 LLM。pipeline 只需要做 parse/chunk/filter/prepare，extraction 在 session 里由 Claude 自己做。这不仅省了 API cost，还省了一个 auth 问题。\n\n这个改动听起来小，但它改变了整个产品的 deployment story：从 \"需要配置 API key 的独立 pipeline\" 变成 \"Claude Code 的 native skill，零配置\"。\n\nF3 的 UI 用了 3 个 subagent 并行：data model + API routes、UI shell + pages、timeline view。并行的好处是快，坏处是 merge 时会有 interface mismatch。果然，两个 agent 对 `SessionMeta` type 的定义不完全一致——一个用 inline type，一个 import 了不存在的 type。这种问题在多 agent 并行时几乎必然发生。Fix 很简单，但这是一个值得记住的 pattern：**多 agent 并行的 interface contract 要在 dispatch 前锁死。**\n\nF4 的测试跑出了几个坑：\n\n1. **vitest 会拿 Playwright tests 当 unit tests 跑**——必须在 vitest config 里 exclude `e2e/` 目录\n2. **ESM module mocking 的 fs mock 不生效**——`vi.mock('fs')` 配合 `importOriginal` 返回的是真实 `readFileSync`。解法：别 mock fs，用真实 temp file\n3. **a11y color contrast**——light mode 的 `--color-text-muted: #8888a0` 在白色背景上只有 3.45:1（需要 4.5:1）。badge 颜色也不达标。这不是 edge case，是 **light mode 下最常见的 a11y failure**\n\n最终：67 vitest + 12 Playwright E2E + 3 axe-core a11y，全绿。\n\n---\n\n## 写作风格的最后一公里\n\n部署完了，site 跑起来了，但文章内容一看就是 AI 生成的。emoji section headers、bullet list 摘要、四平八稳的废话——完全不像真人写的 blog。\n\n这是 extraction prompt 的问题。写了一份详细的 style guide 注入 prompt：开头必须是具体场景不是总结、有观点有 spine、敢说 trade-off、展示不完美的地方。Anti-pattern 列表也写进去了：不要 emoji header、不要 bullet list 摘要、不要 generic praise。\n\n这一步改动很小，但对最终产品质量的影响可能比前面所有架构决策加起来都大。Pipeline 再精巧，出来的文章像 ChatGPT 生成的就没有人想读。**风格不是装饰，是产品。**\n\n---\n\n## 回头看：Reviewer 说对了什么\n\n现在做完了回头看，4 个 reviewer 的判断哪些验证了：\n\n**PM 说 \"别当 startup 做\"——完全正确。** 这就是一个 personal tool + 开源项目。Vercel 部署是为了自己方便，不是为了获客。\n\n**Devil's Advocate 说 \"先产出真实卡片再说\"——部分正确。** close the loop 之后确实发现 auto-extraction 质量只有 80%，top 2 张能用，后面的偏泛。但方向修正后（从 atomic cards 改成 full narrative），这个问题消失了——narrative 不需要原子级精度。\n\n**Engineer 说 filter 坏了——完全正确。** fix 之后从 95% 降到 33%，prompt 从 317K 降到 10K。没有这个 fix，后面什么都做不了。\n\n**Architect 说需要 two-pass——MVP 里没做，但 TA 是对的。** 目前的方案是单 pass + Claude 自己做 extraction，绕过了 context window 问题。但如果 session 超过 100K tokens，还是会需要 two-pass。这个债留着了。\n\n---\n\n## 诚实评价\n\n做完的东西：一个能跑的 blog 风格 SPA，能从 session JSONL 生成详细文章，有完整测试，部署在 Vercel。\n\n没做的东西：topic boundary detection（自动检测 session 内的话题切换并分篇）、image generation（hero image、inline 配图）、真实数据替换 sample data、session-end hook 自动触发。\n\n最大的未知：**compound effect 还是 claim 不是 evidence。** 需要 dogfood 两周才知道答案——每天生成 session brain，看三个月后回头翻的时候到底有没有用。如果没有，这 4 小时就是一个漂亮的 spike。如果有，这可能是 AI coding session 里最被低估的基础设施。\n\n下一步：跑真实 session 数据，看文章质量。然后 dogfood。",
   "heroImage": null,
-  "tags": ["session-brain", "opc", "idea-factory", "spike", "vite", "react", "vercel", "memex", "agent-review"],
+  "tags": [
+    "session-brain",
+    "opc",
+    "idea-factory",
+    "spike",
+    "vite",
+    "react",
+    "vercel",
+    "memex",
+    "agent-review"
+  ],
   "sessionId": "1854dbbd-13cd-4e6e-b298-628a27c8a1bf",
   "project": "session-brain",
   "date": "2026-04-14",
-  "duration": "4h",
-  "stats": { "entries": 1917, "messages": 181, "chunks": 10 }
+  "duration": "26h 57min",
+  "stats": {
+    "entries": 1917,
+    "messages": 181,
+    "chunks": 10,
+    "tokens": {
+      "input": 1782087,
+      "output": 300268,
+      "cache_creation": 1048183,
+      "cache_read": 47597075,
+      "total": 50727613
+    },
+    "llmCalls": 300,
+    "modelsUsed": [
+      "claude-opus-4-6",
+      "claude-opus-4.6-1m"
+    ],
+    "toolCalls": {
+      "total": 275,
+      "byType": {
+        "Bash": 122,
+        "Read": 36,
+        "Write": 34,
+        "Edit": 21,
+        "Agent": 15,
+        "mcp__playwright__browser_take_screenshot": 8,
+        "mcp__playwright__browser_navigate": 7,
+        "TaskUpdate": 5,
+        "AskUserQuestion": 4,
+        "mcp__playwright__browser_snapshot": 4,
+        "Grep": 4,
+        "Skill": 3,
+        "WebSearch": 3,
+        "ToolSearch": 3,
+        "TaskOutput": 2,
+        "mcp__playwright__browser_click": 2,
+        "TaskCreate": 1,
+        "mcp__playwright__browser_console_messages": 1
+      }
+    },
+    "subagents": {
+      "count": 23,
+      "agents": [
+        {
+          "type": "general-purpose",
+          "description": "Scaffold session-brain project"
+        },
+        {
+          "type": "superpowers:code-reviewer",
+          "description": "Spec document review"
+        },
+        {
+          "type": "Explore",
+          "description": "Explore session-recap JSONL discovery"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Devil's advocate on architecture"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Deploy to Vercel"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Create session-brain skill"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Build pipeline core TypeScript"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Rewrite data model and prompt"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Build UI shell and pages"
+        },
+        {
+          "type": "general-purpose",
+          "description": "PM review of Session Brain"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Extract insights from session"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Build data model and API"
+        },
+        {
+          "type": "Explore",
+          "description": "Explore dream-works Vercel setup"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Rewrite UI to blog style"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Devil's Advocate review"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Write unit and E2E tests"
+        },
+        {
+          "type": "Explore",
+          "description": "Explore memex serve implementation"
+        },
+        {
+          "type": "Explore",
+          "description": "Check docs directory and memex structure"
+        },
+        {
+          "type": "Explore",
+          "description": "Explore memex CLI TypeScript patterns"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Write session article from prompt"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Product/architecture review of spike"
+        },
+        {
+          "type": "Explore",
+          "description": "Explore memex + recap architecture"
+        },
+        {
+          "type": "general-purpose",
+          "description": "Engineer review of spike code"
+        }
+      ],
+      "tokens": {
+        "input": 994926,
+        "output": 188728,
+        "cache_creation": 245017,
+        "cache_read": 8664091
+      }
+    },
+    "filesTouched": [
+      "/Users/touchskyer/.claude/settings.json",
+      "/Users/touchskyer/.claude/skills/session-brain/skill.md",
+      "/Users/touchskyer/.session-brain/2026-04-13/01-idea-factory-session-brain-evaluation.md",
+      "/Users/touchskyer/Code/Jingxia/.harness/backlog.md",
+      "/Users/touchskyer/Code/Jingxia/.harness/flow-context.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/build/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/code-review/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/discover/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/discover/run_1/candidates.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/evaluate/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/evaluate/run_1/session-brain-eval.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/evaluate/run_1/synthesis-prep.md",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/pitch/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/pitch/run_1/pitch-deck.md",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/pitch/run_1/research-report.md",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/pitch/run_1/summary.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/review/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/synthesize/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/synthesize/run_1/decision.md",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/validate/handshake.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/nodes/validate/run_1/results.json",
+      "/Users/touchskyer/Code/Jingxia/.harness/progress.md",
+      "/Users/touchskyer/Code/Jingxia/docs/superpowers/specs/2026-04-13-engram-design.md",
+      "/Users/touchskyer/Code/Jingxia/session-brain-spike/.harness/acceptance-criteria.md",
+      "/Users/touchskyer/Code/Jingxia/session-brain-spike/.harness/loop-state.json",
+      "/Users/touchskyer/Code/Jingxia/session-brain-spike/.harness/plan.md",
+      "/Users/touchskyer/Code/Jingxia/session-brain-spike/session-brain-spike.py",
+      "/Users/touchskyer/Code/Jingxia/session-brain-spike/session-brain-v2.py",
+      "/Users/touchskyer/Code/session-brain/api/insights.ts",
+      "/Users/touchskyer/Code/session-brain/e2e/insights.spec.ts",
+      "/Users/touchskyer/Code/session-brain/src/components/MarkdownRenderer.tsx",
+      "/Users/touchskyer/Code/session-brain/src/index.css",
+      "/Users/touchskyer/Code/session-brain/src/pages/ArticleReader.tsx",
+      "/Users/touchskyer/Code/session-brain/src/pages/InsightDetail.tsx",
+      "/Users/touchskyer/Code/session-brain/src/pipeline/__tests__/parse.test.ts",
+      "/Users/touchskyer/Code/session-brain/src/pipeline/prepare.ts",
+      "/Users/touchskyer/Code/session-brain/src/pipeline/prompt.ts",
+      "/Users/touchskyer/Code/session-brain/src/pipeline/types.ts",
+      "/Users/touchskyer/Code/session-brain/vitest.config.ts"
+    ],
+    "costEstimate": {
+      "total_cost": 46.77,
+      "currency": "USD"
+    },
+    "durationMinutes": 1617.1
+  }
 }

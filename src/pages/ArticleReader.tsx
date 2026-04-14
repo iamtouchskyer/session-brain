@@ -113,11 +113,35 @@ export function ArticleReader({ slug, allArticles }: Props) {
           <span>{article.duration}</span>
         </div>
         <div className="reader__stats">
-          <span>{article.stats.entries} entries</span>
-          <span className="reader__sep" aria-hidden="true">&middot;</span>
-          <span>{article.stats.messages} messages</span>
-          <span className="reader__sep" aria-hidden="true">&middot;</span>
-          <span>{article.stats.chunks} chunks</span>
+          {article.stats.tokens ? (
+            <>
+              <span>{(article.stats.tokens.total / 1000).toFixed(0)}K tokens</span>
+              <span className="reader__sep" aria-hidden="true">&middot;</span>
+              <span>{article.stats.llmCalls ?? '?'} LLM calls</span>
+              <span className="reader__sep" aria-hidden="true">&middot;</span>
+              <span>{article.stats.toolCalls?.total ?? '?'} tool uses</span>
+              {article.stats.subagents && article.stats.subagents.count > 0 && (
+                <>
+                  <span className="reader__sep" aria-hidden="true">&middot;</span>
+                  <span>{article.stats.subagents.count} subagents</span>
+                </>
+              )}
+              {article.stats.costEstimate && (
+                <>
+                  <span className="reader__sep" aria-hidden="true">&middot;</span>
+                  <span>${article.stats.costEstimate.total_cost}</span>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <span>{article.stats.entries} entries</span>
+              <span className="reader__sep" aria-hidden="true">&middot;</span>
+              <span>{article.stats.messages} messages</span>
+              <span className="reader__sep" aria-hidden="true">&middot;</span>
+              <span>{article.stats.chunks} chunks</span>
+            </>
+          )}
         </div>
         <p className="reader__summary">{article.summary}</p>
       </header>
