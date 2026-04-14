@@ -1,0 +1,10 @@
+{
+  "slug": "astro-i18n-data-attribute-pattern",
+  "category": "PATTERN",
+  "confidence": 0.82,
+  "title": "Astro SSG 轻量 i18n：data-i18n 属性 + 客户端 JS 切换",
+  "body": "在 Astro SSG 站点实现中英双语的最轻方案：\n1. HTML 默认输出英文（SEO friendly，无 JS 也能看）\n2. 所有可翻译元素加 data-i18n=\"key\" 属性\n3. 翻译 dict 通过 Astro define:vars inline 到 <script is:inline>\n4. 客户端 JS 遍历 [data-i18n] 替换 textContent\n5. localStorage 持久化 + navigator.language 自动检测\n\n只翻译 UI chrome（nav、section labels、按钮），产品内容（name/tagline/description）保持原文。零依赖，零构建开销，无需生成两套 HTML。",
+  "tags": ["astro", "i18n", "ssg", "pattern"],
+  "sessionId": "45a1a7f3-40c9-4323-91ee-06ac26ef75a9",
+  "extractedAt": "2026-04-14T13:35:00.000Z"
+}

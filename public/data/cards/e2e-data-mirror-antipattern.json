@@ -1,0 +1,10 @@
+{
+  "slug": "e2e-data-mirror-antipattern",
+  "category": "PATTERN",
+  "confidence": 0.90,
+  "title": "E2E 测试硬编码数据值 = data mirror，不是 behavior test",
+  "body": "三个独立 reviewer（engineer + tester + DA）都指出：E2E 测试里 text=98.6%、text=1,045、.tag-pill 数量这类断言是在测 \"当前数据是否存在\"，不是在测渲染逻辑。任何 manifest 更新都会炸测试，即使渲染完全正确。\n\n正确做法：测行为（\"stats bar renders N items from manifest\"），不测具体数值。toLocaleString() 输出依赖 locale 环境（de_DE 下 1,045 变 1.045），CI 会静默失败。\n\n修复时把 homepage.spec.ts 从硬编码值改为 .hero-tagline class 定位 + 结构断言。和 [[smoke-test-false-positive-trap]] 是同一类问题。",
+  "tags": ["e2e", "testing", "antipattern", "playwright"],
+  "sessionId": "45a1a7f3-40c9-4323-91ee-06ac26ef75a9",
+  "extractedAt": "2026-04-14T13:35:00.000Z"
+}

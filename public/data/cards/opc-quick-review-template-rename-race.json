@@ -1,0 +1,10 @@
+{
+  "slug": "opc-quick-review-template-rename-race",
+  "category": "GOTCHA",
+  "confidence": 0.80,
+  "title": "OPC flow template 改名导致 flow-state.json 失效",
+  "body": "OPC harness 的 flow template 改名（quick-review → review）后，已存在的 flow-state.json 记录着旧 template name，导致 route/viz/finalize 报 \"unknown flow template\"。init 在改名前成功执行，但后续命令读到新代码不认旧名。\n\n这不是 bug，是 mid-session schema migration。防御方案：harness 在 route/transition 时如果发现 flowTemplate 不在 FLOW_TEMPLATES 里，给一个清晰的 error message 而不是 generic \"unknown flow template\"。\n\n和 [[opc-synthesize-emoji-verdict-mismatch]] 类似，都是 harness 内部状态和运行时代码不一致的问题。",
+  "tags": ["opc", "harness", "flow-state", "migration"],
+  "sessionId": "45a1a7f3-40c9-4323-91ee-06ac26ef75a9",
+  "extractedAt": "2026-04-14T13:35:00.000Z"
+}

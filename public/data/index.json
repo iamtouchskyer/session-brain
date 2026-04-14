@@ -4,11 +4,16 @@
     "agent-loop-retry-pattern",
     "structured-output-schema-drift",
     "vitest-mock-boundary-rule",
-    "env-file-git-worktree-trap"
+    "env-file-git-worktree-trap",
+    "opc-quick-review-template-rename-race",
+    "e2e-data-mirror-antipattern",
+    "theme-toggle-system-preference-fouc",
+    "astro-i18n-data-attribute-pattern"
   ],
   "sessions": [
     "session-20260413-001",
-    "session-20260412-003"
+    "session-20260412-003",
+    "45a1a7f3-40c9-4323-91ee-06ac26ef75a9"
   ],
-  "lastUpdated": "2026-04-14T00:00:00.000Z"
+  "lastUpdated": "2026-04-14T12:00:00.000Z"
 }

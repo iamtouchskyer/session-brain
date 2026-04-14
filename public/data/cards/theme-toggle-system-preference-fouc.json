@@ -1,0 +1,10 @@
+{
+  "slug": "theme-toggle-system-preference-fouc",
+  "category": "GOTCHA",
+  "confidence": 0.85,
+  "title": "Theme toggle E2E 测试必须处理系统 prefers-color-scheme",
+  "body": "dream-works 的 FOUC prevention script 会检测 window.matchMedia('(prefers-color-scheme: light)')，在 localStorage 没有值时自动应用 light class。所有 theme-toggle E2E 测试假设 \"默认是 dark\" 就全炸了。\n\n修法：beforeEach 里 localStorage.removeItem('dream-works-theme') + page.reload()，然后检测当前实际状态再做 toggle 断言，而不是假设固定的初始状态。\n\n更一般的教训：任何依赖系统偏好的功能，E2E 测试不能假设特定的系统配置。和 [[smoke-test-false-positive-trap]] 相关。",
+  "tags": ["e2e", "theme", "dark-mode", "fouc", "playwright"],
+  "sessionId": "45a1a7f3-40c9-4323-91ee-06ac26ef75a9",
+  "extractedAt": "2026-04-14T13:35:00.000Z"
+}
