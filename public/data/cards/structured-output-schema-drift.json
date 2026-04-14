@@ -1,0 +1,10 @@
+{
+  "slug": "structured-output-schema-drift",
+  "category": "DECISION",
+  "confidence": 0.92,
+  "title": "Structured output 用 Zod schema 做 runtime validation",
+  "body": "LLM 的 structured output 不能盲信 — 即使指定了 JSON schema，模型偶尔会返回不符合 schema 的结果（尤其在 enum 值和 nested object 上）。决策：所有 LLM 输出都过 Zod parse，失败时用 safeParse 拿到具体的 validation error，喂回给模型做一次 self-correction。比直接 retry 成功率高 3 倍。代价是多一次 API call，但 70% 哲学 — 这个 trade-off 值得。",
+  "tags": ["llm", "structured-output", "zod", "validation", "decision"],
+  "sessionId": "session-20260413-001",
+  "extractedAt": "2026-04-13T16:00:00.000Z"
+}

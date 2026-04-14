@@ -1,5 +1,14 @@
 {
-  "cards": ["port-conflict-breaks-oauth-silently"],
-  "sessions": [],
+  "cards": [
+    "port-conflict-breaks-oauth-silently",
+    "agent-loop-retry-pattern",
+    "structured-output-schema-drift",
+    "vitest-mock-boundary-rule",
+    "env-file-git-worktree-trap"
+  ],
+  "sessions": [
+    "session-20260413-001",
+    "session-20260412-003"
+  ],
   "lastUpdated": "2026-04-14T00:00:00.000Z"
 }

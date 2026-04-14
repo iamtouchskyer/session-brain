@@ -7,6 +7,14 @@
     <title>session-brain</title>
   </head>
   <body>
+    <script>
+      // Prevent FOUC: set theme before render
+      (function() {
+        var t = localStorage.getItem('session-brain-theme');
+        if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
