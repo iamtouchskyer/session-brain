@@ -1,20 +1,11 @@
 import type { SessionArticle } from '../pipeline/types'
 import { ProjectBadge } from './ProjectBadge'
 import { navigate } from '../lib/router'
+import { GRADIENTS, DEFAULT_GRADIENT } from '../lib/gradients'
 
 interface Props {
   article: SessionArticle
 }
-
-const GRADIENTS: Record<string, string> = {
-  'session-brain': 'linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)',
-  mitsein: 'linear-gradient(135deg, #06b6d4 0%, #10b981 100%)',
-  opc: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
-  jingxia: 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)',
-  memex: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
-}
-
-const DEFAULT_GRADIENT = 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -40,7 +31,7 @@ export function ArticleCard({ article }: Props) {
     >
       <div className="article-card__hero">
         {article.heroImage ? (
-          <img src={article.heroImage} alt="" className="article-card__hero-img" />
+          <img src={`/data/${article.heroImage}`} alt="" className="article-card__hero-img" />
         ) : (
           <div className="article-card__hero-gradient" style={{ background: gradient }} />
         )}

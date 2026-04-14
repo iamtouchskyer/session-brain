@@ -4,21 +4,12 @@ import { loadArticle } from '../lib/data'
 import { ProjectBadge } from '../components/ProjectBadge'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { navigate } from '../lib/router'
+import { GRADIENTS, DEFAULT_GRADIENT } from '../lib/gradients'
 
 interface Props {
   slug: string
   allArticles: SessionArticle[]
 }
-
-const GRADIENTS: Record<string, string> = {
-  'session-brain': 'linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)',
-  mitsein: 'linear-gradient(135deg, #06b6d4 0%, #10b981 100%)',
-  opc: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
-  jingxia: 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)',
-  memex: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
-}
-
-const DEFAULT_GRADIENT = 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -97,7 +88,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
 
       <div className="reader__hero">
         {article.heroImage ? (
-          <img src={article.heroImage} alt="" className="reader__hero-img" />
+          <img src={`/data/${article.heroImage}`} alt="" className="reader__hero-img" />
         ) : (
           <div className="reader__hero-gradient" style={{ background: gradient }} />
         )}
@@ -115,33 +106,26 @@ export function ArticleReader({ slug, allArticles }: Props) {
         <div className="reader__stats">
           {article.stats.tokens ? (
             <>
-              <span>{(article.stats.tokens.total / 1000).toFixed(0)}K tokens</span>
-              <span className="reader__sep" aria-hidden="true">&middot;</span>
-              <span>{article.stats.llmCalls ?? '?'} LLM calls</span>
-              <span className="reader__sep" aria-hidden="true">&middot;</span>
-              <span>{article.stats.toolCalls?.total ?? '?'} tool uses</span>
+              <span className="reader__stat-pill">{(article.stats.tokens.total / 1000).toFixed(0)}K tokens</span>
+              <span className="reader__stat-pill">{article.stats.llmCalls ?? '?'} LLM calls</span>
+              <span className="reader__stat-pill">{article.stats.toolCalls?.total ?? '?'} tool uses</span>
               {article.stats.subagents && article.stats.subagents.count > 0 && (
-                <>
-                  <span className="reader__sep" aria-hidden="true">&middot;</span>
-                  <span>{article.stats.subagents.count} subagents</span>
-                </>
+                <span className="reader__stat-pill">{article.stats.subagents.count} subagents</span>
               )}
               {article.stats.costEstimate && (
-                <>
-                  <span className="reader__sep" aria-hidden="true">&middot;</span>
-                  <span>${article.stats.costEstimate.total_cost}</span>
-                </>
+                <span className="reader__stat-pill reader__stat-pill--cost">${article.stats.costEstimate.total_cost}</span>
               )}
             </>
           ) : (
             <>
-              <span>{article.stats.entries} entries</span>
-              <span className="reader__sep" aria-hidden="true">&middot;</span>
-              <span>{article.stats.messages} messages</span>
-              <span className="reader__sep" aria-hidden="true">&middot;</span>
-              <span>{article.stats.chunks} chunks</span>
+              <span className="reader__stat-pill">{article.stats.entries} entries</span>
+              <span className="reader__stat-pill">{article.stats.messages} messages</span>
+              <span className="reader__stat-pill">{article.stats.chunks} chunks</span>
             </>
           )}
+        </div>
+        <div className="reader__session-id" title={article.sessionId}>
+          session:{article.sessionId.slice(0, 8)}
         </div>
         <p className="reader__summary">{article.summary}</p>
       </header>

@@ -1,0 +1,71 @@
+{
+  "slug": "2026-04-09-societas-agent-platform",
+  "title": "199M tokens 和 $220 之后，我得到了什么：给一个 agent 平台做知识蒸馏的全过程",
+  "summary": "一个 session 跨越 4 天，烧掉 199M tokens，花了 $220，生成了 21 篇带 file:line 证据的架构参考文档、一个可复用的 advisor builder skill、还顺手 review 了自己的 34 个 skills 目录。这不是一篇关于效率的文章——这是一篇关于 AI 怎么在 YOLO 模式下自己跑飞、又怎么被拉回来的故事。",
+  "body": "## 当 validate-evidence.py 在 2566 个 reference 上 timeout 的时候\n\nOPC tester agent 第一个回来报告的时候，我知道出事了。\n\n不是文档写错了——21 篇架构文档的内容质量\"很好\"，它自己都这么说。问题是 `validate-evidence.py`，那个用来验证每一条 `file:line` 引用是否真实存在的脚本，在 2566 个 reference 上直接 timeout。原因很简单也很蠢：每一个未解析的 reference 都触发一个 `find` subprocess。2566 次 fork。CI 环境下根本跑不动。\n\n这是一个 4 天 session 的缩影——你以为核心问题是\"写文档\"，结果真正卡住你的是 tooling。\n\n## 为什么要给 Societas 做知识蒸馏\n\nSocietas 是一个 AI agent 平台：Python FastAPI 后端 + React Router v7 前端，用 E2B sandbox 跑代码，LiteLLM 做多 provider LLM 路由。代码量不小，架构层次多——agent execution、AgentPress core、tool system、sandbox orchestration、LLM integration、DAO layer、API routes + SSE streaming，前端还有 Zustand state management、Fluent UI v9 component system、15 个 store。\n\n之前已经给 claude-code（hermes-agent 的 fork）做过一套 advisor——23 篇架构文档 + Claude Code Skill，效果不错：问任何架构问题，agent 能精准定位到 `file:line`，不是泛泛而谈。现在要给 Societas 做同样的事。\n\n但\"同样的事\"这四个字藏着一个陷阱：第一次是手工 craft，第二次你会想\"应该自动化了\"。\n\n## Phase 1-4：从 scaffold 到 21 篇文档\n\n整个过程分成明确的 phases：\n\n1. **Scaffold**：目录结构、模板、agent.md、SKILL.md、21 个 doc skeleton、generate-html.py、validate-evidence.py\n2. **Fill Critical**：7 篇核心文档（agent execution、AgentPress core、tool system、sandbox orchestration、LLM integration、agent streaming、data flow E2E）\n3. **Fill High**：6 篇（DAO layer、API routes/SSE、auth middleware、feature flags、routing/app shell、state management）\n4. **Fill Medium**：8 篇（messaging transport、roles/prompts、services/integrations、telemetry/eval、component design system、auth security、i18n/build、deployment/operations）\n\n每篇文档的写法都是一样的：先派 Explore subagent 读源码，收集 `file:line` evidence，然后派 Write subagent 按模板填充。89 个 subagent 在这个 session 里跑过——其中很多是并行的。\n\n到 Phase 4 结束时，21 篇文档全部填完，2566 个 evidence reference。数字很漂亮。\n\n然后 OPC review 开始了。\n\n## OPC review：三个角色同时开喷\n\n`/opc` 是我的 One Person Company skill——核心原则是\"做事的 agent 不能评估自己\"。它会 dispatch 多个独立 reviewer agent，每个从不同角度审查，然后用机械化的 verdict protocol（🔴/🟡/🔵 emoji 计数）决定 PASS/ITERATE/FAIL。\n\n三个 reviewer 同时上阵：\n\n**Tester** 找到了 validate-evidence.py 的性能灾难（前面说的 2566 次 find subprocess），还发现 21 个 HTML 文件的 `<title>` 标签里都泄漏了 `¶` 字符——generate-html.py 从 H1 提取 title 时没清理 Markdown headerlink anchor 的 `&para;` entity。另外 Priority label 在 21 个 doc 里有 6 种写法：`🔴 Critical`、`HIGH`、`High`、`:red_circle: Critical`……\n\n**Architect** 检查了文档间的交叉引用一致性和抽象层次。\n\n**Engineer** 关注实操问题——哪些引用会因为源码更新而过时，哪些 pattern 描述得不够 actionable。\n\nGate verdict: **ITERATE**。内容质量好，但 tooling 和格式一致性要修一轮。\n\n---\n\n这个结果很典型。写文档本身不难——让 LLM 读源码写结构化文档，现在的 model 能力完全够。真正的质量差距在 mechanical validation：你的 evidence 是不是真的指向那个文件的那一行？格式是不是一致的？工具链能不能在 CI 里跑通？\n\n## 从手工 advisor 到 build-advisor skill\n\n修完 OPC 的 findings 之后，下一个自然的想法是：我已经给 claude-code 和 Societas 各做了一次，pattern 完全一样——源码 → 扫描 → 设计 doc 列表 → 逐篇蒸馏 → 审计校验 → 生成 HTML → 安装 Skill。为什么不做一个 builder？\n\n于是 `github-repo-advisor-builder` 诞生了。核心设计：\n\n- 一个 Claude Code Skill，不是 Python CLI（蒸馏的核心能力是 LLM 读源码写文档，Python 脚本替代不了）\n- STATE.md relay pattern：7-phase state machine（Discover → Framework → Write → Audit → HTML → Install → Quality Pass），每次唤醒读 STATE.md，做一个 atomic step，更新 STATE.md\n- advisor.yaml 做 single config source，Python 脚本和 Skill 都从这里读配置\n- validate-evidence.py 做 mechanical gate（FILE_NOT_FOUND、LINE_OUT_OF_RANGE），不靠 LLM reviewer 的主观判断\n\n第一版设计里我放了 per-doc digraph——每篇文档都经过 write → 3-role review → gate → loopback 的循环。OPC 的 devil's advocate 把这个设计干掉了：\n\n> \"25 篇 doc × 3 个 LLM reviewer × 最多 3 轮 = 225 次 LLM 调用，只为了 review。而 validate-evidence.py 一次跑完就能告诉你哪些引用是假的。per-doc digraph 是过度工程。\"\n\n改成 batch audit gate：Phase 2 写完所有 doc，Phase 3 跑一次 validate-evidence.py，看结果决定 ITERATE 还是 PASS。简单，有效，便宜。\n\n然后我拿 gemini-cli（TypeScript monorepo，7 个 packages）做了真正的 E2E 测试。用户说了一句\"不要等我确认呀...你应该是YOLO\"，agent 就开始自主跑了——30 分钟一次 cron 唤醒，读 STATE.md，做下一步，更新状态。\n\n最终 gemini-cli advisor：25 篇文档，1670 个 reference 全部 PASS，25/25 section compliance。过程中发现了一堆 builder 本身的问题——doc template 从 8-section 扩展到 11-section（加了 Architectural Decisions、Gotchas & Caveats、Evidence Boundary），full path 要求（`packages/core/src/scheduler/scheduler.ts:95` 而不是 `scheduler.ts:95`），minimum line count by priority。这些 learnings 全部 feed back 到 build-advisor skill。\n\n## 34 个 skills 的混乱和第十人的反驳\n\nSession 后期，我回头看了一眼 `~/.claude/skills/` 目录：34 个 skill，全部平铺在一级目录下。6 个 repo advisor、6 个 office/docs 相关、5 个 design/UI、4 个 Mitsein ops、3 个 media gen……\n\n分析结论很明确：应该重组。Architect agent 建议按功能分组，Engineer agent 评估了迁移成本（主要是 cross-skill hardcoded paths——至少 6 处），Devil's advocate 质疑重组的必要性。\n\nDevil's advocate 的核心论点：Claude Code skill loader 只扫描 `~/.claude/skills/*/SKILL.md` 一层深。你不能用子目录分组。而且重命名会 break 所有 hardcoded 的跨 skill 引用。收益是什么？看起来整齐？那不是 engineering reason。\n\n最终决定：不重组目录结构，让 model 自己去选择。34 个 skill 对 LLM 来说不算多——它不需要人类的视觉整洁感。\n\n这个结论让我不太舒服，但它是对的。\n\n## session-recap 的 cost 计算 bug\n\n这个 session 里还顺手做了 session-recap skill 的 OPC review。Devil's advocate 找到了两个 🔴 CRITICAL bug，叠加起来能让 cost 低估 10 倍：\n\n1. `sorted(['<synthetic>', 'claude-opus-4.6-1m'])` 会把 `<synthetic>` 排在前面（字母序），导致 fallback 到 Sonnet pricing。实际用 Opus 的 session，cost 直接按 Sonnet 算，低估 5 倍。\n2. Subagent tokens 完全没算。验证了一个真实 session，subagent 占 input 37%、output 51%。16.4MB 的 subagent JSONL 被忽略。\n\n两个 bug 叠加：Opus session + 大量 subagent → 报 $2.50，实际 $25。\n\n5 分钟修复 + 30 分钟修复。这就是 OPC 的价值——做事的 agent 看不到自己的盲区。\n\n## 199M tokens 买到了什么\n\n回头看这个 session 的产出：\n\n- Societas advisor：21 篇架构文档，2396/2566 evidence OK（93.4%），安装为 `/societas-advisor` skill\n- build-advisor：可复用的 advisor builder skill，11-section doc template，7-phase state machine\n- gemini-cli advisor：25 篇文档，1670 reference 100% PASS，作为 builder 的 E2E validation\n- session-recap bug fixes：cost 计算准确度从\"差 10 倍\"修到\"差 5% 以内\"\n- Skills 重组讨论：结论是不重组，但搞清楚了为什么\n\n$220，1081 次 tool call，89 个 subagent。说实话，如果不是 cron relay pattern 让 agent 自主跑了很多轮（包括几次 `model_not_supported` 的 API error 导致的浪费），cost 应该能低 30%。\n\n最值得记住的 insight：**mechanical validation 比 LLM review 更可靠也更便宜**。validate-evidence.py 一次跑完告诉你哪些是假引用，比 3 个 LLM reviewer 角色各写一篇 review 有效率得多。LLM review 有它的价值——找架构层面的问题、发现 cross-reference inconsistency、质疑设计假设——但验证 `file:line` 引用是否存在这种事，交给 Python 脚本就好。\n\n另一个 insight：**YOLO 模式 + STATE.md relay 是一种可行的长任务执行模式**。Agent 每 30 分钟醒来，读状态，做一步，存状态。即使中间 context window 爆了、API 报错、model 换了，下一次唤醒还能接上。但代价是你失去了对过程的细粒度控制——agent 会自己做决定，有时候是好决定，有时候不是。\n\n这不是一个完美的 session。validate-evidence.py 的 bare filename collision 问题到最后也没完全解决（monorepo 里 `logger.py` 有 3 个同名文件，`find` 命中哪个是运气）。Medium priority docs 的 evidence accuracy 明显低于 Critical docs。API error 浪费了不少 tokens。但 21 篇能用的架构文档 + 一个能复用的 builder，这个投入产出比我能接受。",
+  "heroImage": "images/2026-04-09-societas-agent-platform.png",
+  "tags": [
+    "mitsein",
+    "societas",
+    "knowledge-distillation",
+    "advisor",
+    "opc",
+    "claude-code-skill",
+    "yolo-mode",
+    "state-machine"
+  ],
+  "sessionId": "b55683eb-4f3b-488f-aefc-3a14c0930d37",
+  "project": "mitsein",
+  "date": "2026-04-09",
+  "duration": "83h 20min",
+  "stats": {
+    "tokens": {
+      "input": 17734782,
+      "output": 1679662,
+      "cache_creation": 0,
+      "cache_read": 179432179,
+      "total": 198846623
+    },
+    "llmCalls": 1175,
+    "toolCalls": {
+      "total": 1081,
+      "by_type": {
+        "Bash": 394,
+        "Read": 235,
+        "Edit": 191,
+        "Write": 72,
+        "Grep": 54,
+        "TaskUpdate": 35,
+        "Agent": 33,
+        "TaskCreate": 11,
+        "TaskOutput": 11,
+        "Glob": 11,
+        "AskUserQuestion": 5,
+        "ExitPlanMode": 5,
+        "Skill": 4,
+        "EnterPlanMode": 3,
+        "mcp__playwright__browser_navigate": 3,
+        "WebFetch": 3,
+        "mcp__playwright__browser_take_screenshot": 2,
+        "CronCreate": 2,
+        "CronList": 2,
+        "CronDelete": 2,
+        "TaskList": 1,
+        "SendMessage": 1,
+        "WebSearch": 1
+      }
+    },
+    "subagents": 89,
+    "costEstimate": {
+      "input_cost": 88.67,
+      "output_cost": 41.99,
+      "cache_write_cost": 0,
+      "cache_read_cost": 89.72,
+      "total_cost": 220.38,
+      "currency": "USD",
+      "note": "Estimated (2026-Q2 Anthropic pricing, includes subagent tokens)"
+    },
+    "filesTouched": 86,
+    "durationMinutes": 5000.1
+  }
+}
