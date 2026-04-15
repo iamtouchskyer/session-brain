@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { put, head, get } from '@vercel/blob'
+import { put, list } from '@vercel/blob'
 import {
   generateId,
   hashPassword,
@@ -7,6 +7,7 @@ import {
   getAuthUser,
   shareKey,
   indexKey,
+  isValidId,
   MAX_SHARES_PER_USER,
   isExpired,
   isLocked,
@@ -19,11 +20,16 @@ import {
 
 // ---------- blob helpers ----------
 
+/**
+ * Read blob by key. Uses list() to find the blob, then fetches via downloadUrl.
+ * Avoids head() + CDN fetch which can return stale data after recent writes.
+ */
 async function readBlob<T>(key: string): Promise<T | null> {
   try {
-    const info = await head(key)
-    if (!info) return null
-    const res = await fetch(info.url)
+    const { blobs } = await list({ prefix: key, limit: 1 })
+    const blob = blobs.find((b) => b.pathname === key)
+    if (!blob) return null
+    const res = await fetch(blob.downloadUrl)
     if (!res.ok) return null
     return res.json() as Promise<T>
   } catch {
@@ -51,8 +57,8 @@ async function handleCreate(req: VercelRequest, res: VercelResponse): Promise<vo
     res.status(400).json({ error: 'Missing slug' })
     return
   }
-  if (!password || typeof password !== 'string' || password.length < 1) {
-    res.status(400).json({ error: 'Missing password' })
+  if (!password || typeof password !== 'string' || password.length < 4) {
+    res.status(400).json({ error: 'Password must be at least 4 characters' })
     return
   }
   if (typeof expiresInDays !== 'number' || expiresInDays < 1 || expiresInDays > 365) {
@@ -85,12 +91,18 @@ async function handleCreate(req: VercelRequest, res: VercelResponse): Promise<vo
     locked: false,
   }
 
-  // Write share record and update index in parallel
-  const newIndex: ShareIndex = { shares: [...currentShares, id] }
-  await Promise.all([
-    writeBlob(shareKey(id), record),
-    writeBlob(idxKey, newIndex),
-  ])
+  // Write share record first (source of truth)
+  await writeBlob(shareKey(id), record)
+
+  // Update index second — if this fails, share exists but won't appear in list.
+  // Acceptable eventual consistency: user can still access share via direct URL.
+  try {
+    const newIndex: ShareIndex = { shares: [...currentShares, id] }
+    await writeBlob(idxKey, newIndex)
+  } catch (e) {
+    console.error('Failed to update share index after create:', id, e)
+    // Don't fail the whole request — share was created successfully
+  }
 
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`

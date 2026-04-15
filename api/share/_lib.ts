@@ -30,16 +30,25 @@ export interface ShareMeta {
 
 // ---------- token ----------
 
-/** Generate a 12-char alphanumeric ID using crypto — no ESM nanoid dependency */
+/**
+ * Generate a 12-char alphanumeric ID using crypto with rejection sampling.
+ * Rejection sampling eliminates modulo bias — uniform distribution across 62 chars.
+ * Entropy: log2(62^12) ≈ 71.45 bits.
+ */
 export function generateId(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  const bytes = crypto.randomBytes(18) // 18 bytes → enough entropy for 12 chars
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' // 62 chars
+  const maxValid = 256 - (256 % chars.length) // 248 — reject bytes ≥ 248 to eliminate modulo bias
   let result = ''
-  for (let i = 0; i < 18 && result.length < 12; i++) {
-    const idx = bytes[i] % chars.length
-    result += chars[idx]
+  while (result.length < 12) {
+    const bytes = crypto.randomBytes(18)
+    for (let i = 0; i < bytes.length && result.length < 12; i++) {
+      if (bytes[i] < maxValid) {
+        result += chars[bytes[i] % chars.length]
+      }
+      // Reject bytes >= maxValid — no padding, no bias
+    }
   }
-  return result.padEnd(12, 'A').slice(0, 12)
+  return result
 }
 
 // ---------- password ----------
@@ -77,6 +86,13 @@ export function incrementAttempts(record: ShareRecord): ShareRecord {
   return { ...record, attempts, locked: attempts >= MAX_ATTEMPTS }
 }
 
+// ---------- blob key validation ----------
+
+/** Validate share ID — only alphanumeric, exactly 12 chars. Prevents path traversal. */
+export function isValidId(id: string): boolean {
+  return /^[A-Za-z0-9]{12}$/.test(id)
+}
+
 // ---------- JWT verify (same as me.ts) ----------
 
 export function verifySessionToken(token: string, secret: string): Record<string, unknown> | null {
@@ -108,7 +124,21 @@ export function getAuthUser(cookieHeader: string | undefined): string | null {
 
   const token = cookies.session
   if (!token) return null
-  const secret = process.env.SESSION_SECRET ?? 'session-brain-dev-secret'
+
+  // In production SESSION_SECRET must be set — no fallback (prevents token forgery).
+  // In local dev allow the hardcoded dev secret so `vercel dev` works without setup.
+  const secret = process.env.SESSION_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('FATAL: SESSION_SECRET env var not set in production — refusing auth')
+      return null
+    }
+    const devSecret = 'session-brain-dev-secret'
+    const payload = verifySessionToken(token, devSecret)
+    if (!payload || typeof payload.login !== 'string') return null
+    return payload.login
+  }
+
   const payload = verifySessionToken(token, secret)
   if (!payload || typeof payload.login !== 'string') return null
   return payload.login

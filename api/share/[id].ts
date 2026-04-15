@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { put, del, head } from '@vercel/blob'
+import { put, del, list } from '@vercel/blob'
 import {
   getAuthUser,
   shareKey,
@@ -8,17 +8,24 @@ import {
   isLocked,
   incrementAttempts,
   verifyPassword,
+  isValidId,
   type ShareRecord,
   type ShareIndex,
 } from './_lib'
 
 // ---------- blob helpers ----------
 
+/**
+ * Read blob by key. Uses list() to find the blob URL, then fetches the content.
+ * Avoids the head() + CDN fetch pattern which can serve stale data after deletes.
+ */
 async function readBlob<T>(key: string): Promise<T | null> {
   try {
-    const info = await head(key)
-    if (!info) return null
-    const res = await fetch(info.url)
+    const { blobs } = await list({ prefix: key, limit: 1 })
+    const blob = blobs.find((b) => b.pathname === key)
+    if (!blob) return null
+    // Use downloadUrl (bypass CDN) to avoid stale reads after delete
+    const res = await fetch(blob.downloadUrl)
     if (!res.ok) return null
     return res.json() as Promise<T>
   } catch {
@@ -39,20 +46,33 @@ async function fetchArticle(slug: string): Promise<unknown | null> {
 
   if (!owner || !repo) return null
 
-  // Search by slug — try common year paths then fallback to search API
-  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  // Use jsDelivr CDN (GFW-friendly) for public repos, GitHub API for private
+  if (!token) {
+    // Public repo — jsDelivr
+    const indexUrl = `https://cdn.jsdelivr.net/gh/${owner}/${repo}@main/index.json`
+    const idxRes = await fetch(indexUrl)
+    if (!idxRes.ok) return null
+    const idx = await idxRes.json() as { articles?: Array<{ slug: string; path: string }> }
+    const entry = idx.articles?.find((a) => a.slug === slug)
+    if (!entry) return null
+    const articleUrl = `https://cdn.jsdelivr.net/gh/${owner}/${repo}@main/${entry.path}`
+    const artRes = await fetch(articleUrl)
+    if (!artRes.ok) return null
+    return artRes.json()
+  }
 
-  // Attempt direct path via index
-  const indexUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/index.json`
+  // Private repo — GitHub API
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+  }
+  const indexUrl = `https://api.github.com/repos/${owner}/${repo}/contents/index.json`
   const idxRes = await fetch(indexUrl, { headers })
   if (!idxRes.ok) return null
   const idx = await idxRes.json() as { articles?: Array<{ slug: string; path: string }> }
-
   const entry = idx.articles?.find((a) => a.slug === slug)
   if (!entry) return null
-
-  const articleUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/${entry.path}`
+  const articleUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${entry.path}`
   const artRes = await fetch(articleUrl, { headers })
   if (!artRes.ok) return null
   return artRes.json()
@@ -64,8 +84,8 @@ async function handleGet(req: VercelRequest, res: VercelResponse): Promise<void>
   const id = req.query.id as string
   const password = req.query.password as string | undefined
 
-  if (!id) {
-    res.status(400).json({ error: 'Missing id' })
+  if (!id || !isValidId(id)) {
+    res.status(400).json({ error: 'Invalid share id' })
     return
   }
 
@@ -106,6 +126,22 @@ async function handleGet(req: VercelRequest, res: VercelResponse): Promise<void>
 }
 
 async function handleDelete(req: VercelRequest, res: VercelResponse): Promise<void> {
+  // CSRF protection: require request to originate from same host
+  const origin = req.headers.origin as string | undefined
+  const host = req.headers.host as string | undefined
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host
+      if (originHost !== host) {
+        res.status(403).json({ error: 'CSRF check failed' })
+        return
+      }
+    } catch {
+      res.status(403).json({ error: 'CSRF check failed' })
+      return
+    }
+  }
+
   const login = getAuthUser(req.headers.cookie)
   if (!login) {
     res.status(401).json({ error: 'Unauthorized' })
@@ -113,8 +149,8 @@ async function handleDelete(req: VercelRequest, res: VercelResponse): Promise<vo
   }
 
   const id = req.query.id as string
-  if (!id) {
-    res.status(400).json({ error: 'Missing id' })
+  if (!id || !isValidId(id)) {
+    res.status(400).json({ error: 'Invalid share id' })
     return
   }
 
@@ -129,17 +165,30 @@ async function handleDelete(req: VercelRequest, res: VercelResponse): Promise<vo
     return
   }
 
-  // Delete blob and remove from user index
-  const blobInfo = await head(shareKey(id))
-  if (blobInfo) {
-    await del(blobInfo.url)
+  // Delete blob — wrapped in try-catch to prevent orphaned index entries
+  try {
+    const { blobs } = await list({ prefix: shareKey(id), limit: 1 })
+    const blob = blobs.find((b) => b.pathname === shareKey(id))
+    if (blob) {
+      await del(blob.url)
+    }
+  } catch (e) {
+    console.error('Failed to delete share blob:', id, e)
+    res.status(500).json({ error: 'Failed to delete share' })
+    return
   }
 
-  const idxKey = indexKey(login)
-  const idx = await readBlob<ShareIndex>(idxKey)
-  if (idx) {
-    const updated: ShareIndex = { shares: idx.shares.filter((s) => s !== id) }
-    await writeBlob(idxKey, updated)
+  // Remove from user index
+  try {
+    const idxKey = indexKey(login)
+    const idx = await readBlob<ShareIndex>(idxKey)
+    if (idx) {
+      const updated: ShareIndex = { shares: idx.shares.filter((s) => s !== id) }
+      await writeBlob(idxKey, updated)
+    }
+  } catch (e) {
+    // Non-fatal: share is deleted, index cleanup failed. Log and continue.
+    console.error('Failed to update share index after delete:', id, e)
   }
 
   res.status(204).end()
@@ -150,7 +199,7 @@ async function handleDelete(req: VercelRequest, res: VercelResponse): Promise<vo
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const id = req.query.id as string
 
-  // CORS — GET is public
+  // CORS — GET is public (read-only share access), DELETE is same-origin only
   if (req.method === 'GET') {
     res.setHeader('Access-Control-Allow-Origin', '*')
   }
