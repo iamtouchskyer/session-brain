@@ -9,6 +9,79 @@ const BRANCH = import.meta.env.VITE_GITHUB_BRANCH ?? 'main'
 // server-side proxy that holds the token out of the client bundle.
 const TOKEN = import.meta.env.VITE_GITHUB_TOKEN ?? ''
 
+// ---------------------------------------------------------------------------
+// In-memory cache (process lifetime, cleared on page reload)
+// ---------------------------------------------------------------------------
+const TTL_INDEX = 5 * 60 * 1000    // 5 min
+const TTL_ARTICLE = 30 * 60 * 1000 // 30 min
+
+interface CacheEntry { data: unknown; expiresAt: number }
+const memCache = new Map<string, CacheEntry>()
+
+export function getCached<T>(key: string): T | null {
+  const entry = memCache.get(key)
+  if (!entry) return null
+  if (Date.now() > entry.expiresAt) {
+    memCache.delete(key)
+    return null
+  }
+  return entry.data as T
+}
+
+export function setCached(key: string, data: unknown, ttl: number): void {
+  memCache.set(key, { data, expiresAt: Date.now() + ttl })
+}
+
+/** Expose for testing only */
+export function clearMemCache(): void {
+  memCache.clear()
+}
+
+// ---------------------------------------------------------------------------
+// Cache Storage API (browser cache, stale-while-revalidate)
+// Only used for the public CDN path (TOKEN === '').
+// ---------------------------------------------------------------------------
+const CACHE_NAME = 'logex-v1'
+
+async function fetchWithCache<T>(url: string, ttl: number): Promise<T> {
+  if ('caches' in globalThis) {
+    try {
+      const cache = await caches.open(CACHE_NAME)
+      const cached = await cache.match(url)
+      if (cached) {
+        const data = await cached.clone().json() as T
+        const age = Date.now() - Number(cached.headers.get('x-cached-at') ?? 0)
+        if (age < ttl) return data
+        // Stale — serve immediately, refresh in background
+        fetch(url).then((r) => r.json()).then((fresh) => {
+          cache.put(url, new Response(JSON.stringify(fresh), {
+            headers: { 'Content-Type': 'application/json', 'x-cached-at': String(Date.now()) },
+          })).catch(() => {})
+        }).catch(() => {})
+        return data
+      }
+      // Not in cache — fetch and store
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`Fetch failed: ${url} (${res.status})`)
+      const data = await res.json() as T
+      cache.put(url, new Response(JSON.stringify(data), {
+        headers: { 'Content-Type': 'application/json', 'x-cached-at': String(Date.now()) },
+      })).catch(() => {})
+      return data
+    } catch (e) {
+      // Cache API error — fall through to plain fetch
+      if ((e as Error)?.message?.startsWith('Fetch failed:')) throw e
+    }
+  }
+  // Fallback: no Cache API
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Fetch failed: ${url} (${res.status})`)
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
+// Core fetch helpers
+// ---------------------------------------------------------------------------
 function rawUrl(path: string): string {
   if (TOKEN) {
     // Use API for private repos
@@ -18,27 +91,46 @@ function rawUrl(path: string): string {
   return `https://cdn.jsdelivr.net/gh/${REPO}@${BRANCH}/${path}`
 }
 
-async function fetchFile<T>(path: string): Promise<T> {
+async function fetchFile<T>(path: string, ttl: number): Promise<T> {
   const url = rawUrl(path)
-  const headers: Record<string, string> = { Accept: 'application/json' }
+
   if (TOKEN) {
-    headers['Authorization'] = `Bearer ${TOKEN}`
-    headers['Accept'] = 'application/vnd.github.raw+json'
+    // Private repo via GitHub API — no Cache Storage (auth headers can't be cached safely)
+    const cached = getCached<T>(`mem:${path}`)
+    if (cached !== null) return cached
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.raw+json',
+      Authorization: `Bearer ${TOKEN}`,
+    }
+    const res = await fetch(url, { headers })
+    if (!res.ok) throw new Error(`GitHub fetch failed: ${path} (${res.status})`)
+    const data = await res.json() as T
+    setCached(`mem:${path}`, data, ttl)
+    return data
   }
-  const res = await fetch(url, { headers })
-  if (!res.ok) throw new Error(`GitHub fetch failed: ${path} (${res.status})`)
-  return res.json()
+
+  // Public CDN: mem cache → Cache Storage → network
+  const memKey = `pub:${path}`
+  const memHit = getCached<T>(memKey)
+  if (memHit !== null) return memHit
+
+  const data = await fetchWithCache<T>(url, ttl)
+  setCached(memKey, data, ttl)
+  return data
 }
 
+// ---------------------------------------------------------------------------
+// Adapter
+// ---------------------------------------------------------------------------
 export class GitHubAdapter implements StorageAdapter {
   async loadIndex(): Promise<ArticleIndex> {
-    return fetchFile<ArticleIndex>('index.json')
+    return fetchFile<ArticleIndex>('index.json', TTL_INDEX)
   }
 
   async loadArticle(slug: string): Promise<SessionArticle> {
     const index = await this.loadIndex()
     const meta = index.articles.find((a) => a.slug === slug)
     if (!meta) throw new Error(`Article not found: ${slug}`)
-    return fetchFile<SessionArticle>(meta.path)
+    return fetchFile<SessionArticle>(meta.path, TTL_ARTICLE)
   }
 }

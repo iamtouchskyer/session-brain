@@ -14,16 +14,14 @@ export async function loadArticle(slug: string): Promise<SessionArticle> {
   return adapter.loadArticle(slug)
 }
 
-export async function loadAllArticles(): Promise<(SessionArticle & ArticleMeta)[]> {
+/**
+ * Returns only index metadata — no per-article fetches.
+ * ArticleCard only needs: slug, title, summary, tags, date, duration, project, heroImage, stats.
+ * All of these come from index.json directly.
+ */
+export async function loadAllArticles(): Promise<ArticleMeta[]> {
   const index = await loadIndex()
-  const results = await Promise.allSettled(
-    index.articles.map(async (meta) => {
-      const article = await loadArticle(meta.slug)
-      return { ...meta, ...article }
-    })
+  return [...index.articles].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   )
-  return results
-    .filter((r): r is PromiseFulfilledResult<SessionArticle & ArticleMeta> => r.status === 'fulfilled')
-    .map((r) => r.value)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }

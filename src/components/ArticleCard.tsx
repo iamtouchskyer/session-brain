@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import type { SessionArticle } from '../pipeline/types'
+import type { ArticleMeta } from '../lib/storage/types'
 import { ProjectBadge } from './ProjectBadge'
 import { navigate } from '../lib/router'
 import { GRADIENTS, DEFAULT_GRADIENT } from '../lib/gradients'
 
 interface Props {
-  article: SessionArticle
+  article: ArticleMeta
 }
 
 function formatDate(iso: string): string {

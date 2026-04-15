@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import type { SessionArticle } from './pipeline/types'
+import type { ArticleMeta } from './lib/data'
 import { loadAllArticles } from './lib/data'
 import { useRoute } from './lib/router'
 import { useTheme } from './lib/theme'
@@ -15,7 +15,7 @@ function App() {
   const { theme, toggle } = useTheme()
   const { user, loading: authLoading, login, logout } = useAuth()
 
-  const [articles, setArticles] = useState<SessionArticle[]>([])
+  const [articles, setArticles] = useState<ArticleMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -28,7 +28,7 @@ function App() {
   }, [user])
 
   const sessionCount = useMemo(() => {
-    const set = new Set(articles.map((a) => a.sessionId))
+    const set = new Set(articles.map((a) => a.sessionId).filter(Boolean))
     return set.size
   }, [articles])
 
@@ -51,7 +51,7 @@ function App() {
   const renderPage = () => {
     switch (route.path) {
       case '/articles/:slug':
-        return <ArticleReader slug={route.params.slug} allArticles={articles} />
+        return <ArticleReader slug={route.params.slug} />
       case '/timeline':
         return <Timeline articles={articles} loading={loading} error={error} />
       default:

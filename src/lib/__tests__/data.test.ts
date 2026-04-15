@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ArticleIndex } from '../storage/types'
+import type { ArticleIndex, ArticleMeta } from '../storage/types'
 import type { SessionArticle } from '../../pipeline/types'
 
 // Use vi.hoisted so the mock object is available before vi.mock hoisting
@@ -14,7 +14,17 @@ vi.mock('../storage', () => ({
 
 import { loadIndex, loadArticle, loadAllArticles } from '../data'
 
-const makeIndex = (articles: ArticleIndex['articles'] = []): ArticleIndex => ({
+const makeMeta = (slug: string, date = '2026-04-15'): ArticleMeta => ({
+  slug,
+  title: `Article ${slug}`,
+  summary: 'summary',
+  date,
+  tags: [],
+  project: 'test',
+  path: `2026/04/15/${slug}.json`,
+})
+
+const makeIndex = (articles: ArticleMeta[] = []): ArticleIndex => ({
   articles,
   lastUpdated: '2026-04-15',
 })
@@ -64,34 +74,33 @@ describe('loadArticle', () => {
 describe('loadAllArticles', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('loads and merges all articles sorted newest first', async () => {
-    const meta1 = { slug: 'a1', title: 'A1', summary: '', date: '2026-04-15', tags: [], project: 'p', path: '2026/04/15/a1.json' }
-    const meta2 = { slug: 'a2', title: 'A2', summary: '', date: '2026-04-14', tags: [], project: 'p', path: '2026/04/14/a2.json' }
-    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([meta1, meta2]))
-    mockAdapter.loadArticle.mockResolvedValueOnce(makeArticle('a1', '2026-04-15'))
-    mockAdapter.loadArticle.mockResolvedValueOnce(makeArticle('a2', '2026-04-14'))
+  it('returns ArticleMeta[] sorted newest first — no per-article fetches', async () => {
+    const meta1 = makeMeta('a1', '2026-04-15')
+    const meta2 = makeMeta('a2', '2026-04-14')
+    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([meta2, meta1]))
 
     const result = await loadAllArticles()
     expect(result).toHaveLength(2)
     expect(result[0].slug).toBe('a1')
     expect(result[1].slug).toBe('a2')
-  })
-
-  it('skips failed article fetches gracefully', async () => {
-    const meta1 = { slug: 'a1', title: 'A1', summary: '', date: '2026-04-15', tags: [], project: 'p', path: '2026/04/15/a1.json' }
-    const meta2 = { slug: 'fail', title: 'Fail', summary: '', date: '2026-04-14', tags: [], project: 'p', path: '2026/04/14/fail.json' }
-    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([meta1, meta2]))
-    mockAdapter.loadArticle.mockResolvedValueOnce(makeArticle('a1', '2026-04-15'))
-    mockAdapter.loadArticle.mockRejectedValueOnce(new Error('not found'))
-
-    const result = await loadAllArticles()
-    expect(result).toHaveLength(1)
-    expect(result[0].slug).toBe('a1')
+    // Crucially: loadArticle must NOT be called
+    expect(mockAdapter.loadArticle).not.toHaveBeenCalled()
   })
 
   it('returns empty array when no articles', async () => {
     mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([]))
     const result = await loadAllArticles()
     expect(result).toHaveLength(0)
+    expect(mockAdapter.loadArticle).not.toHaveBeenCalled()
+  })
+
+  it('returns ArticleMeta[] (not full SessionArticle)', async () => {
+    const meta = makeMeta('x1', '2026-04-15')
+    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([meta]))
+
+    const result = await loadAllArticles()
+    expect(result[0]).toEqual(meta)
+    // No body field — it's just index metadata
+    expect('body' in result[0]).toBe(false)
   })
 })

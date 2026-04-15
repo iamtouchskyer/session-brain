@@ -8,7 +8,6 @@ import { GRADIENTS, DEFAULT_GRADIENT } from '../lib/gradients'
 
 interface Props {
   slug: string
-  allArticles: SessionArticle[]
 }
 
 function formatDate(iso: string): string {
@@ -21,21 +20,13 @@ function formatDate(iso: string): string {
   })
 }
 
-export function ArticleReader({ slug, allArticles }: Props) {
+export function ArticleReader({ slug }: Props) {
   const [article, setArticle] = useState<SessionArticle | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [heroImgError, setHeroImgError] = useState(false)
 
   useEffect(() => {
-    const cached = allArticles.find((a) => a.slug === slug)
-    if (cached) {
-      setArticle(cached)
-      setLoading(false)
-      window.scrollTo(0, 0)
-      return
-    }
-
     setLoading(true)
     setError(null)
     loadArticle(slug)
@@ -45,7 +36,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [slug, allArticles])
+  }, [slug])
 
   // Reset hero image error when article changes
   useEffect(() => { setHeroImgError(false) }, [slug])

@@ -14,6 +14,10 @@ export interface ArticleMeta {
   project: string
   heroImage?: string
   path: string  // storage path, e.g. "2026/04/15/slug.json"
+  // Optional enriched fields (may be present in index.json for richer list display)
+  sessionId?: string
+  duration?: string
+  stats?: SessionArticle['stats']
 }
 
 export interface StorageAdapter {

@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import type { SessionArticle } from '../pipeline/types'
+import type { ArticleMeta } from '../lib/storage/types'
 import { ProjectBadge } from '../components/ProjectBadge'
 import { navigate } from '../lib/router'
 
 interface Props {
-  articles: SessionArticle[]
+  articles: ArticleMeta[]
   loading: boolean
   error: string | null
 }
@@ -14,7 +14,7 @@ function formatDayHeader(iso: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-function groupByDay(articles: SessionArticle[]): Map<string, SessionArticle[]> {
+function groupByDay(articles: ArticleMeta[]): Map<string, ArticleMeta[]> {
   const sorted = [...articles].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   )

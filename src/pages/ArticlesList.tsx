@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react'
-import type { SessionArticle } from '../pipeline/types'
+import type { ArticleMeta } from '../lib/storage/types'
 import { ArticleCard } from '../components/ArticleCard'
 import { SearchBar } from '../components/SearchBar'
 
 interface Props {
-  articles: SessionArticle[]
+  articles: ArticleMeta[]
   loading: boolean
   error: string | null
 }
@@ -31,7 +31,7 @@ export function ArticlesList({ articles, loading, error }: Props) {
         (a) =>
           a.title.toLowerCase().includes(q) ||
           a.summary.toLowerCase().includes(q) ||
-          a.tags.some((t) => t.toLowerCase().includes(q)),
+          (a.tags ?? []).some((t) => t.toLowerCase().includes(q)),
       )
     }
 
