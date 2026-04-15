@@ -52,7 +52,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
 
   if (loading) {
     return (
-      <div className="state-message">
+      <div className="state-message" role="status" aria-live="polite">
         <div className="state-message__spinner" aria-label="Loading" />
         <p>Loading article...</p>
       </div>
@@ -75,7 +75,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
 
   return (
     <article className="reader" aria-label={article.title}>
-      <nav className="reader__nav" aria-label="Breadcrumb">
+      <div className="reader__nav" aria-label="Article navigation">
         <button
           className="reader__back"
           onClick={() => navigate('/')}
@@ -88,7 +88,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
           </svg>
           Back
         </button>
-      </nav>
+      </div>
 
       <div className="reader__hero">
         {article.heroImage && !heroImgError ? (
@@ -109,8 +109,12 @@ export function ArticleReader({ slug, allArticles }: Props) {
           <time dateTime={article.date}>{formatDate(article.date)}</time>
           <span className="reader__sep" aria-hidden="true">&middot;</span>
           <ProjectBadge project={article.project} />
-          <span className="reader__sep" aria-hidden="true">&middot;</span>
-          <span>{article.duration}</span>
+          {article.duration && (
+            <>
+              <span className="reader__sep" aria-hidden="true">&middot;</span>
+              <span>{article.duration}</span>
+            </>
+          )}
         </div>
         <div className="reader__stats">
           {article.stats.tokens ? (

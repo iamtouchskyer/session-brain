@@ -36,7 +36,7 @@ export function Timeline({ articles, loading, error }: Props) {
 
   if (loading) {
     return (
-      <div className="state-message">
+      <div className="state-message" role="status" aria-live="polite">
         <div className="state-message__spinner" aria-label="Loading" />
         <p>Loading timeline...</p>
       </div>
@@ -45,9 +45,12 @@ export function Timeline({ articles, loading, error }: Props) {
 
   if (error) {
     return (
-      <div className="state-message state-message--error">
+      <div className="state-message state-message--error" role="alert">
         <p>Failed to load timeline</p>
         <p className="state-message__detail">{error}</p>
+        <button className="btn btn--secondary" onClick={() => navigate('/')} type="button">
+          Back to articles
+        </button>
       </div>
     )
   }
