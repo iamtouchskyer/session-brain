@@ -126,7 +126,7 @@ export function MarkdownRenderer({ content }: Props) {
       i++ // skip separator row
       i++
       const bodyRows: string[][] = []
-      while (i < lines.length && lines[i].includes('|')) {
+      while (i < lines.length && ((lines[i].match(/\|/g) ?? []).length >= 2 || lines[i].trimStart().startsWith('|') || lines[i].trimEnd().endsWith('|'))) {
         bodyRows.push(parseTableRow(lines[i]))
         i++
       }
@@ -235,7 +235,9 @@ export function MarkdownRenderer({ content }: Props) {
       !lines[i].match(/^!\[([^\]]*)\]\(([^)]+)\)$/) &&
       // Don't absorb setext heading underlines
       !lines[i].match(/^={3,}\s*$/) &&
-      !lines[i].match(/^-{3,}\s*$/)
+      !lines[i].match(/^-{3,}\s*$/) &&
+      // Look-ahead: don't absorb a line that is a setext heading (next line is === or ---)
+      !(i + 1 < lines.length && /^[=-]{3,}\s*$/.test(lines[i + 1]))
     ) {
       paraLines.push(lines[i])
       i++
