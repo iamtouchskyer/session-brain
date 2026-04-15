@@ -2728,3 +2728,112 @@ body {
     align-items: flex-end;
   }
 }
+
+/* =============================================
+   F5.1 — Mobile fixes (max-width: 480px)
+   ============================================= */
+
+/* 1. No horizontal overflow */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* 2. Code blocks: horizontal scroll, no overflow */
+pre,
+pre code,
+.md-code-block {
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
+}
+
+@media (max-width: 480px) {
+  /* 3. Body + form inputs: 16px minimum to prevent iOS auto-zoom */
+  input,
+  textarea,
+  select,
+  .share-page__gate-input {
+    font-size: 16px;
+  }
+
+  /* 4. Article cards: full-width at 375px */
+  .article-card {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    border-radius: var(--radius-md);
+  }
+
+  .articles-feed {
+    gap: 16px;
+  }
+
+  /* 5. Touch targets: 44px minimum */
+  .filter-btn,
+  .nav__logout,
+  .reader__back,
+  .landing__cta,
+  button,
+  [role="button"] {
+    min-height: 44px;
+  }
+
+  /* 6. Landing hero: scale down gracefully */
+  .landing__hero {
+    padding: 28px 16px 40px;
+  }
+
+  .landing__title {
+    font-size: clamp(1.6rem, 8vw, 2.2rem);
+    margin-bottom: 14px;
+  }
+
+  .landing__subtitle {
+    font-size: 0.95rem;
+    margin-bottom: 28px;
+  }
+
+  .landing__stat-number {
+    font-size: 1.4rem;
+  }
+
+  .landing__cta {
+    padding: 12px 24px;
+    font-size: 0.95rem;
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 7. Share page gate card: responsive padding */
+  .share-page__gate-card {
+    padding: 24px 16px;
+    max-width: 100%;
+    border-radius: var(--radius-md);
+  }
+
+  .share-page__gate-title {
+    font-size: 1.25rem;
+  }
+
+  /* 8. Reader: horizontal padding on mobile */
+  .reader {
+    padding-left: 16px;
+    padding-right: 16px;
+    max-width: 100%;
+  }
+
+  .reader__title {
+    font-size: 1.35rem;
+  }
+
+  .md-body {
+    font-size: 0.9375rem;
+  }
+
+  .md-code-block {
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+  }
+}
