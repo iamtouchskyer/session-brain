@@ -1746,8 +1746,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-bg-surface);
@@ -1759,6 +1759,11 @@ body {
 .sidebar__close-btn:hover {
   color: var(--color-text);
   border-color: var(--color-text-muted);
+}
+
+.sidebar__close-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* --- Hamburger button (mobile nav) --- */
@@ -1852,6 +1857,16 @@ body {
     height: auto;
     min-height: calc(100vh - 60px);
     border-right: none;
+  }
+
+  /* Mobile touch target minimums (WCAG 2.5.5) */
+  .sidebar-wrapper--mobile .sidebar__link {
+    min-height: 44px;
+    padding: 12px 10px;
+  }
+  .sidebar-wrapper--mobile .sidebar__item-btn {
+    min-height: 44px;
+    padding: 10px 10px;
   }
 
   /* App body — full width on mobile */

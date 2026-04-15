@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { ArticleMeta } from './lib/data'
 import { loadAllArticles } from './lib/data'
 import { useRoute } from './lib/router'
@@ -34,6 +34,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
 
   // Sidebar state
+  const hamburgerRef = useRef<HTMLButtonElement>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
@@ -62,7 +63,42 @@ function App() {
     })
   }, [])
 
-  const handleMobileClose = useCallback(() => setMobileDrawerOpen(false), [])
+  const handleMobileClose = useCallback(() => {
+    setMobileDrawerOpen(false)
+    // Return focus to hamburger button (WCAG 2.4.3)
+    setTimeout(() => hamburgerRef.current?.focus(), 0)
+  }, [])
+
+  // Focus trap for mobile drawer (WCAG 2.4.3)
+  const drawerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!mobileDrawerOpen) return
+    // Move focus into drawer
+    const drawer = drawerRef.current
+    if (!drawer) return
+    const focusable = drawer.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusable.length > 0) focusable[0].focus()
+
+    // Trap focus within drawer
+    const trapFocus = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const els = drawer.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (els.length === 0) return
+      const first = els[0]
+      const last = els[els.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', trapFocus)
+    return () => document.removeEventListener('keydown', trapFocus)
+  }, [mobileDrawerOpen])
 
   // Close mobile drawer on Escape
   useEffect(() => {
@@ -122,6 +158,7 @@ function App() {
         <div className="nav__inner">
           {/* Hamburger (mobile only) */}
           <button
+            ref={hamburgerRef}
             className="nav__hamburger"
             onClick={() => setMobileDrawerOpen(true)}
             type="button"
@@ -156,6 +193,7 @@ function App() {
           onToggleCollapse={handleToggleCollapse}
           mobileOpen={mobileDrawerOpen}
           onMobileClose={handleMobileClose}
+          drawerRef={drawerRef}
         />
 
         <div className="app__content-area">

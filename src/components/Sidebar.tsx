@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { RefObject } from 'react'
 import type { ArticleMeta } from '../lib/storage/types'
 
 interface SidebarProps {
@@ -8,6 +9,8 @@ interface SidebarProps {
   onToggleCollapse: () => void
   mobileOpen: boolean
   onMobileClose: () => void
+  /** Ref forwarded to mobile drawer div — used for focus trap */
+  drawerRef?: RefObject<HTMLDivElement>
   /** Called when user clicks a project filter */
   onProjectClick?: (project: string) => void
   /** Called when user clicks a tag filter */
@@ -80,6 +83,7 @@ export function Sidebar({
   onToggleCollapse,
   mobileOpen,
   onMobileClose,
+  drawerRef,
   onProjectClick,
   onTagClick,
 }: SidebarProps) {
@@ -158,7 +162,7 @@ export function Sidebar({
             href={link.href}
             className={`sidebar__link${isActive(link.path) ? ' sidebar__link--active' : ''}`}
             aria-current={isActive(link.path) ? 'page' : undefined}
-            title={collapsed ? link.label : undefined}
+            aria-label={collapsed ? link.label : undefined}
           >
             <span className="sidebar__link-icon">{link.icon}</span>
             {!collapsed && <span className="sidebar__link-text">{link.label}</span>}
@@ -181,7 +185,6 @@ export function Sidebar({
                     className="sidebar__item-btn"
                     onClick={() => onProjectClick?.(name)}
                     type="button"
-                    title={collapsed ? `${name} (${count})` : undefined}
                     aria-label={`Filter by project ${name}, ${count} articles`}
                   >
                     <span className="sidebar__item-dot" aria-hidden="true" />
@@ -211,7 +214,6 @@ export function Sidebar({
                     className="sidebar__item-btn"
                     onClick={() => onTagClick?.(tag)}
                     type="button"
-                    title={collapsed ? `${tag} (${count})` : undefined}
                     aria-label={`Filter by tag ${tag}, ${count} articles`}
                   >
                     <span className="sidebar__item-hash" aria-hidden="true">#</span>
@@ -271,7 +273,7 @@ export function Sidebar({
           aria-hidden="true"
         />
       )}
-      <div className={`sidebar-wrapper sidebar-wrapper--mobile${mobileOpen ? ' sidebar-wrapper--mobile-open' : ''}`}
+      <div ref={drawerRef} className={`sidebar-wrapper sidebar-wrapper--mobile${mobileOpen ? ' sidebar-wrapper--mobile-open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label="Navigation"
