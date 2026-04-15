@@ -22,7 +22,7 @@ export function ArticleCard({ article }: Props) {
   const hasRichStats = stats && 'tokens' in stats && stats.tokens
 
   return (
-    <article
+    <div
       className="article-card"
       onClick={() => navigate(`/articles/${article.slug}`)}
       onKeyDown={(e) => {
@@ -46,7 +46,7 @@ export function ArticleCard({ article }: Props) {
           </div>
         ) : (
           <img
-            src={article.heroImage}
+            src={article.heroImage ?? undefined}
             alt=""
             loading="lazy"
             className="article-card__hero-img"
@@ -94,6 +94,6 @@ export function ArticleCard({ article }: Props) {
           )}
         </div>
       </div>
-    </article>
+    </div>
   )
 }

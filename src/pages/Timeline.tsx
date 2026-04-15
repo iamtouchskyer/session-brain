@@ -69,7 +69,7 @@ export function Timeline({ articles, loading, error }: Props) {
           <h3 className="timeline__date">{formatDayHeader(dayArticles[0].date)}</h3>
           <div className="timeline__track">
             {dayArticles.map((article) => (
-              <article
+              <div
                 key={article.slug}
                 className="timeline__entry"
                 onClick={() => navigate(`/articles/${article.slug}`)}
@@ -80,7 +80,7 @@ export function Timeline({ articles, loading, error }: Props) {
                   }
                 }}
                 tabIndex={0}
-                role="link"
+                role="button"
                 aria-label={`Read: ${article.title}`}
               >
                 <div className="timeline__marker" aria-hidden="true" />
@@ -92,7 +92,7 @@ export function Timeline({ articles, loading, error }: Props) {
                   <h4 className="timeline__title">{article.title}</h4>
                   <p className="timeline__body">{article.summary}</p>
                 </div>
-              </article>
+              </div>
             ))}
           </div>
         </div>

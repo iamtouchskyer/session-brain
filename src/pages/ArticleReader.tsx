@@ -25,6 +25,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
   const [article, setArticle] = useState<SessionArticle | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [heroImgError, setHeroImgError] = useState(false)
 
   useEffect(() => {
     const cached = allArticles.find((a) => a.slug === slug)
@@ -45,6 +46,9 @@ export function ArticleReader({ slug, allArticles }: Props) {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [slug, allArticles])
+
+  // Reset hero image error when article changes
+  useEffect(() => { setHeroImgError(false) }, [slug])
 
   if (loading) {
     return (
@@ -87,8 +91,13 @@ export function ArticleReader({ slug, allArticles }: Props) {
       </nav>
 
       <div className="reader__hero">
-        {article.heroImage ? (
-          <img src={article.heroImage} alt="" className="reader__hero-img" />
+        {article.heroImage && !heroImgError ? (
+          <img
+            src={article.heroImage}
+            alt=""
+            className="reader__hero-img"
+            onError={() => setHeroImgError(true)}
+          />
         ) : (
           <div className="reader__hero-gradient" style={{ background: gradient }} />
         )}
