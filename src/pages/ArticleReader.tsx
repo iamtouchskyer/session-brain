@@ -88,7 +88,7 @@ export function ArticleReader({ slug, allArticles }: Props) {
 
       <div className="reader__hero">
         {article.heroImage ? (
-          <img src={`/data/${article.heroImage}`} alt="" className="reader__hero-img" />
+          <img src={article.heroImage} alt="" className="reader__hero-img" />
         ) : (
           <div className="reader__hero-gradient" style={{ background: gradient }} />
         )}
