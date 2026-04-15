@@ -18,7 +18,7 @@ function groupByDay(articles: ArticleMeta[]): Map<string, ArticleMeta[]> {
   const sorted = [...articles].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   )
-  const groups = new Map<string, SessionArticle[]>()
+  const groups = new Map<string, ArticleMeta[]>()
   for (const article of sorted) {
     const day = article.date.slice(0, 10)
     const group = groups.get(day)

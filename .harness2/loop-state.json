@@ -1,12 +1,12 @@
 {
-  "tick": 4,
-  "unit": "F1.4",
-  "description": "Re-review PASS — all 6 F1.2 criticals confirmed fixed. 1 new regression (setext look-ahead) patched inline. 64 tests passing.",
+  "tick": 5,
+  "unit": "F4.1",
+  "description": "Lazy list (N+1→1 requests), two-tier cache (mem TTL + Cache Storage stale-while-revalidate). 72 tests passing.",
   "status": "completed",
   "artifacts": [
-    ".harness2/nodes/F1.4/run_1/eval-frontend.md"
+    ".harness2/nodes/F4.1/run_1/build.md"
   ],
-  "next_unit": "F4.1",
+  "next_unit": "F4.2",
   "blockers": [],
   "review_of_previous": "",
   "plan_file": ".harness2/plan.md",
@@ -29,8 +29,8 @@
   ],
   "_written_by": "opc-harness",
   "_plan_hash": "554e8e802b55d8fa",
-  "_last_modified": "2026-04-15T15:33:18.311Z",
-  "_git_head": "ce92945",
+  "_last_modified": "2026-04-15T15:39:46.071Z",
+  "_git_head": "5f5143a",
   "_tick_history": [
     {
       "unit": "F1.1",
@@ -51,6 +51,11 @@
     {
       "unit": "F1.4",
       "tick": 4,
+      "status": "completed"
+    },
+    {
+      "unit": "F4.1",
+      "tick": 5,
       "status": "completed"
     }
   ],

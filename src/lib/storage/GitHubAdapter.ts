@@ -35,7 +35,13 @@ export function setCached(key: string, data: unknown, ttl: number): void {
 /** Expose for testing only */
 export function clearMemCache(): void {
   memCache.clear()
+  inFlight.clear()
 }
+
+// ---------------------------------------------------------------------------
+// In-flight dedup — prevents thundering herd on cold cache
+// ---------------------------------------------------------------------------
+const inFlight = new Map<string, Promise<unknown>>()
 
 // ---------------------------------------------------------------------------
 // Cache Storage API (browser cache, stale-while-revalidate)
@@ -49,7 +55,14 @@ async function fetchWithCache<T>(url: string, ttl: number): Promise<T> {
       const cache = await caches.open(CACHE_NAME)
       const cached = await cache.match(url)
       if (cached) {
-        const data = await cached.clone().json() as T
+        let data: T
+        try {
+          data = await cached.clone().json() as T
+        } catch {
+          // Corrupt cache entry — delete and fall through to fresh fetch
+          await cache.delete(url)
+          throw new Error('corrupt-cache-entry')
+        }
         const age = Date.now() - Number(cached.headers.get('x-cached-at') ?? 0)
         if (age < ttl) return data
         // Stale — serve immediately, refresh in background
@@ -57,7 +70,10 @@ async function fetchWithCache<T>(url: string, ttl: number): Promise<T> {
           cache.put(url, new Response(JSON.stringify(fresh), {
             headers: { 'Content-Type': 'application/json', 'x-cached-at': String(Date.now()) },
           })).catch(() => {})
-        }).catch(() => {})
+        }).catch(() => {
+          // Background refresh failed — delete stale entry so next request gets fresh data
+          cache.delete(url).catch(() => {})
+        })
         return data
       }
       // Not in cache — fetch and store
@@ -69,8 +85,12 @@ async function fetchWithCache<T>(url: string, ttl: number): Promise<T> {
       })).catch(() => {})
       return data
     } catch (e) {
-      // Cache API error — fall through to plain fetch
-      if ((e as Error)?.message?.startsWith('Fetch failed:')) throw e
+      const msg = (e as Error)?.message ?? ''
+      // Re-throw real fetch errors; swallow cache errors and fall through
+      if (msg.startsWith('Fetch failed:')) throw e
+      if (msg !== 'corrupt-cache-entry') {
+        // Unknown cache error — fall through to plain fetch
+      }
     }
   }
   // Fallback: no Cache API
@@ -109,14 +129,25 @@ async function fetchFile<T>(path: string, ttl: number): Promise<T> {
     return data
   }
 
-  // Public CDN: mem cache → Cache Storage → network
+  // Public CDN: mem cache → in-flight dedup → Cache Storage → network
   const memKey = `pub:${path}`
   const memHit = getCached<T>(memKey)
   if (memHit !== null) return memHit
 
-  const data = await fetchWithCache<T>(url, ttl)
-  setCached(memKey, data, ttl)
-  return data
+  // In-flight dedup: if same key already being fetched, wait for that promise
+  const existing = inFlight.get(memKey)
+  if (existing) return existing as Promise<T>
+
+  const promise = fetchWithCache<T>(url, ttl).then((data) => {
+    setCached(memKey, data, ttl)
+    inFlight.delete(memKey)
+    return data
+  }).catch((err) => {
+    inFlight.delete(memKey)
+    throw err
+  })
+  inFlight.set(memKey, promise)
+  return promise
 }
 
 // ---------------------------------------------------------------------------
