@@ -191,3 +191,90 @@ describe('Inline combo: bold + italic + link', () => {
     expect(html).not.toContain('javascript:')
   })
 })
+
+// ─── Regression: Bug 1 — Multi-line paragraph merge ──────────────────────────
+
+describe('Regression: Multi-line paragraph merge', () => {
+  it('consecutive text lines are merged into a single <p>', () => {
+    const input = `line1\nline2\nline3`
+    const html = md(input)
+    // Only one <p> element
+    const pCount = (html.match(/<p/g) ?? []).length
+    expect(pCount).toBe(1)
+    // All three lines present
+    expect(html).toContain('line1')
+    expect(html).toContain('line2')
+    expect(html).toContain('line3')
+  })
+
+  it('blank line separates two paragraphs', () => {
+    const input = `para one\n\npara two`
+    const html = md(input)
+    const pCount = (html.match(/<p/g) ?? []).length
+    expect(pCount).toBe(2)
+  })
+})
+
+// ─── Regression: Bug 2 — Indented list item not treated as code ──────────────
+
+describe('Regression: Indented list item not code block', () => {
+  it('4-space-indented list item renders as list, not code block', () => {
+    const input = `- item1\n    - nested`
+    const html = md(input)
+    // Must have a list, not a code block
+    expect(html).toContain('<ul')
+    expect(html).toContain('<li')
+    expect(html).toContain('nested')
+    expect(html).not.toContain('<pre')
+  })
+})
+
+// ─── Regression: Bug 3 — HR after empty line, not setext h2 ──────────────────
+
+describe('Regression: HR vs setext h2 disambiguation', () => {
+  it('bare --- after empty line renders as <hr>, not h2', () => {
+    const input = `\n---\n`
+    const html = md(input)
+    expect(html).toContain('<hr')
+    expect(html).not.toContain('<h2')
+  })
+
+  it('standalone --- on first line renders as <hr>', () => {
+    const input = `---`
+    const html = md(input)
+    expect(html).toContain('<hr')
+    expect(html).not.toContain('<h2')
+  })
+
+  it('text followed by --- still renders as setext h2', () => {
+    const input = `Sub Heading\n-----------`
+    const html = md(input)
+    expect(html).toContain('<h2')
+    expect(html).toContain('Sub Heading')
+  })
+})
+
+// ─── Regression: Bug 4 — Table false positive ────────────────────────────────
+
+describe('Regression: Table false positive with single pipe', () => {
+  it('sentence with one pipe is NOT rendered as a table', () => {
+    const input = `choose A | B for this`
+    const html = md(input)
+    expect(html).not.toContain('<table')
+    // Should render as a paragraph
+    expect(html).toContain('<p')
+    expect(html).toContain('choose A')
+  })
+})
+
+// ─── Regression: Bug 5 — Unclosed fenced code block ─────────────────────────
+
+describe('Regression: Unclosed fenced code block', () => {
+  it('code block without closing fence renders content without crashing', () => {
+    const input = "```\ncode without close"
+    const html = md(input)
+    expect(html).toContain('<pre')
+    expect(html).toContain('<code>')
+    expect(html).toContain('code without close')
+  })
+})
