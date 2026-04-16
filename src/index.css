@@ -72,8 +72,8 @@ ul, ol {
   --color-border-subtle: #1e1e30;
 
   --color-text: #e4e4ef;
-  --color-text-secondary: #9d9db5;
-  --color-text-muted: #9090aa; /* was #6b6b85 — bumped for WCAG AA 4.5:1 on dark bg */
+  --color-text-secondary: #a8a8c0;
+  --color-text-muted: #7a7a96;
 
   --color-accent: #8b5cf6;
   --color-accent-hover: #a78bfa;
@@ -121,8 +121,8 @@ ul, ol {
   --color-border-subtle: #e4e4ee;
 
   --color-text: #1a1a2e;
-  --color-text-secondary: #4a4a64;
-  --color-text-muted: #636380;
+  --color-text-secondary: #555572;
+  --color-text-muted: #7e7e98;
 
   --color-accent: #7c3aed;
   --color-accent-hover: #6d28d9;
@@ -1288,7 +1288,7 @@ body {
 }
 
 .landing__stat-label {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1337,7 +1337,7 @@ body {
 
 .landing__note {
   margin-top: 12px;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: var(--color-text-muted);
 }
 
