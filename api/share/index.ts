@@ -50,14 +50,16 @@ async function handleCreate(req: VercelRequest, res: VercelResponse): Promise<vo
     return
   }
 
-  const body = req.body as { slug?: string; password?: string; expiresInDays?: number }
+  const body = req.body as { slug?: string; password?: string | null; expiresInDays?: number }
   const { slug, password, expiresInDays = 30 } = body
 
   if (!slug || typeof slug !== 'string' || slug.trim() === '') {
     res.status(400).json({ error: 'Missing slug' })
     return
   }
-  if (!password || typeof password !== 'string' || password.length < 4) {
+  // password is optional — null/undefined/'' means public link
+  const hasPassword = typeof password === 'string' && password.length > 0
+  if (hasPassword && password!.length < 4) {
     res.status(400).json({ error: 'Password must be at least 4 characters' })
     return
   }
@@ -76,7 +78,7 @@ async function handleCreate(req: VercelRequest, res: VercelResponse): Promise<vo
   }
 
   const id = generateId()
-  const passwordHash = await hashPassword(password)
+  const passwordHash = hasPassword ? await hashPassword(password!) : null
   const now = new Date().toISOString()
   const expiresAt = computeExpiresAt(expiresInDays)
 
@@ -154,13 +156,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return
   }
 
-  if (req.method === 'POST') {
-    return handleCreate(req, res)
-  }
+  try {
+    if (req.method === 'POST') {
+      return await handleCreate(req, res)
+    }
 
-  if (req.method === 'GET') {
-    return handleList(req, res)
-  }
+    if (req.method === 'GET') {
+      return await handleList(req, res)
+    }
 
-  res.status(405).json({ error: 'Method not allowed' })
+    res.status(405).json({ error: 'Method not allowed' })
+  } catch (e) {
+    console.error('[share] unhandled error:', e)
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Sharing service temporarily unavailable. Please try again.' })
+    }
+  }
 }

@@ -8,7 +8,8 @@ import bcrypt from 'bcryptjs'
 export interface ShareRecord {
   id: string
   slug: string
-  passwordHash: string
+  /** Bcrypt hash; `null` means no password (public link). */
+  passwordHash: string | null
   createdBy: string
   createdAt: string
   expiresAt: string

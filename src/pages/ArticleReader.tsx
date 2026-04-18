@@ -6,6 +6,8 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { navigate, useLang } from '../lib/router'
 import { useAuth } from '../lib/auth'
 import { GRADIENTS, DEFAULT_GRADIENT } from '../lib/gradients'
+import { safeFetch } from '../lib/safeFetch'
+import { generatePassword } from '../lib/passwordGen'
 
 interface Props {
   slug: string
@@ -36,11 +38,18 @@ type ModalState =
   | { status: 'success'; url: string; expiresAt: string }
   | { status: 'error'; message: string }
 
+type ExpiresPreset = 7 | 30 | 90 | 'custom'
+
 function ShareModal({ slug, onClose }: ShareModalProps) {
+  const [noPassword, setNoPassword] = useState(false)
   const [password, setPassword] = useState('')
-  const [expiresInDays, setExpiresInDays] = useState(30)
+  const [showPassword, setShowPassword] = useState(false)
+  const [expiresPreset, setExpiresPreset] = useState<ExpiresPreset>(30)
+  const [customDays, setCustomDays] = useState(30)
   const [modalState, setModalState] = useState<ModalState>({ status: 'form' })
   const [copied, setCopied] = useState(false)
+
+  const expiresInDays = expiresPreset === 'custom' ? customDays : expiresPreset
 
   const backdropRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -95,26 +104,33 @@ function ShareModal({ slug, onClose }: ShareModalProps) {
     if (modalState.status === 'submitting') return
     setModalState({ status: 'submitting' })
 
-    try {
-      const res = await fetch('/api/share', {
+    const result = await safeFetch<{ id?: string; url?: string; expiresAt?: string }>(
+      '/api/share',
+      {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, password, expiresInDays }),
-      })
+        body: JSON.stringify({
+          slug,
+          password: noPassword ? null : password,
+          expiresInDays,
+        }),
+      },
+    )
 
-      const json = await res.json() as { id?: string; url?: string; expiresAt?: string; error?: string }
-
-      if (!res.ok) {
-        setModalState({ status: 'error', message: json.error ?? 'Failed to create share link' })
-        return
-      }
-
-      const shareUrl = json.url ?? `${window.location.origin}/#/share/${json.id}`
-      setModalState({ status: 'success', url: shareUrl, expiresAt: json.expiresAt ?? '' })
-    } catch (err) {
-      setModalState({ status: 'error', message: err instanceof Error ? err.message : 'Network error' })
+    if (!result.ok) {
+      setModalState({ status: 'error', message: result.error })
+      return
     }
+
+    const json = result.data
+    const shareUrl = json.url ?? `${window.location.origin}/#/share/${json.id}`
+    setModalState({ status: 'success', url: shareUrl, expiresAt: json.expiresAt ?? '' })
+  }
+
+  function handleGenerate() {
+    setPassword(generatePassword(6))
+    setShowPassword(true)
   }
 
   async function handleCopy(url: string) {
@@ -204,7 +220,7 @@ function ShareModal({ slug, onClose }: ShareModalProps) {
           ) : (
             <form className="share-modal__form" onSubmit={(e) => void handleSubmit(e)} aria-label="Create share link">
               <p className="share-modal__form-desc">
-                Create a password-protected link for <strong>{slug}</strong>.
+                {noPassword ? <>Create a public link for <strong>{slug}</strong>.</> : <>Create a password-protected link for <strong>{slug}</strong>.</>}
               </p>
 
               {modalState.status === 'error' && (
@@ -213,40 +229,105 @@ function ShareModal({ slug, onClose }: ShareModalProps) {
                 </p>
               )}
 
+              <label className="share-modal__checkbox-row">
+                <input
+                  type="checkbox"
+                  className="share-modal__checkbox"
+                  checked={noPassword}
+                  onChange={(e) => setNoPassword(e.target.checked)}
+                  disabled={isSubmitting}
+                />
+                <span>No password (public link)</span>
+              </label>
+
               <div className="share-modal__field">
                 <label htmlFor="share-modal-password" className="share-modal__label">
-                  Password <span aria-hidden="true">(min 4 chars)</span>
+                  Password {!noPassword && <span aria-hidden="true">(min 4 chars)</span>}
                 </label>
-                <input
-                  ref={firstFocusRef}
-                  id="share-modal-password"
-                  type="password"
-                  className="share-modal__input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Set a password"
-                  minLength={4}
-                  required
-                  disabled={isSubmitting}
-                  autoComplete="new-password"
-                />
+                {noPassword ? (
+                  <p className="share-modal__field-hint">
+                    Anyone with the link can view this article.
+                  </p>
+                ) : (
+                  <div className="share-modal__pw-row">
+                    <input
+                      ref={firstFocusRef}
+                      id="share-modal-password"
+                      type={showPassword ? 'text' : 'password'}
+                      className="share-modal__input share-modal__input--pw"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Set a password"
+                      minLength={4}
+                      required
+                      disabled={isSubmitting}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      className="share-modal__pw-btn"
+                      onClick={() => setShowPassword((s) => !s)}
+                      disabled={isSubmitting}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide' : 'Show'}
+                    >
+                      {showPassword ? '🙈' : '👁'}
+                    </button>
+                    <button
+                      type="button"
+                      className="share-modal__pw-btn"
+                      onClick={handleGenerate}
+                      disabled={isSubmitting}
+                      aria-label="Generate strong password"
+                      title="Generate"
+                    >
+                      🎲
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="share-modal__field">
-                <label htmlFor="share-modal-expiry" className="share-modal__label">
-                  Expires in (days)
-                </label>
-                <input
-                  id="share-modal-expiry"
-                  type="number"
-                  className="share-modal__input share-modal__input--narrow"
-                  value={expiresInDays}
-                  onChange={(e) => setExpiresInDays(Math.max(1, Math.min(365, Number(e.target.value))))}
-                  min={1}
-                  max={365}
-                  required
-                  disabled={isSubmitting}
-                />
+                <span className="share-modal__label" id="share-modal-expiry-label">
+                  Expires in
+                </span>
+                <div
+                  className="share-modal__chips"
+                  role="radiogroup"
+                  aria-labelledby="share-modal-expiry-label"
+                >
+                  {([7, 30, 90, 'custom'] as const).map((p) => {
+                    const selected = expiresPreset === p
+                    const label = p === 'custom' ? 'Custom…' : `${p} days`
+                    return (
+                      <button
+                        key={String(p)}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        className={`share-modal__chip${selected ? ' share-modal__chip--selected' : ''}`}
+                        onClick={() => setExpiresPreset(p)}
+                        disabled={isSubmitting}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {expiresPreset === 'custom' && (
+                  <input
+                    id="share-modal-expiry"
+                    type="number"
+                    className="share-modal__input share-modal__input--narrow"
+                    value={customDays}
+                    onChange={(e) => setCustomDays(Math.max(1, Math.min(365, Number(e.target.value))))}
+                    min={1}
+                    max={365}
+                    required
+                    disabled={isSubmitting}
+                    aria-label="Custom expiry days"
+                  />
+                )}
                 <span className="share-modal__field-hint">1–365 days</span>
               </div>
 
@@ -262,7 +343,7 @@ function ShareModal({ slug, onClose }: ShareModalProps) {
                 <button
                   type="submit"
                   className="share-modal__btn share-modal__btn--primary"
-                  disabled={isSubmitting || password.length < 4}
+                  disabled={isSubmitting || (!noPassword && password.length < 4)}
                 >
                   {isSubmitting ? (
                     <>

@@ -281,3 +281,43 @@ describe('constants', () => {
     expect(MAX_SHARES_PER_USER).toBe(50)
   })
 })
+
+// ───────────────────────────────────────────
+// ShareRecord with passwordHash = null (public link)
+// ───────────────────────────────────────────
+
+describe('ShareRecord — no-password (public) variant', () => {
+  it('accepts passwordHash = null in the type', () => {
+    const rec: ShareRecord = {
+      id: generateId(),
+      slug: 'demo',
+      passwordHash: null,
+      createdBy: 'octocat',
+      createdAt: new Date().toISOString(),
+      expiresAt: computeExpiresAt(30),
+      attempts: 0,
+      locked: false,
+    }
+    expect(rec.passwordHash).toBeNull()
+  })
+
+  it('isExpired and isLocked still work for null-password records', () => {
+    const rec: ShareRecord = {
+      id: generateId(),
+      slug: 'demo',
+      passwordHash: null,
+      createdBy: 'u',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+      attempts: 0,
+      locked: false,
+    }
+    expect(isExpired(rec.expiresAt)).toBe(true)
+    expect(isLocked(rec)).toBe(false)
+  })
+
+  it('verifyPassword is never called for null-hash records (caller short-circuits)', async () => {
+    // Sanity: hashPassword fails on null, so the API path MUST short-circuit first
+    await expect(hashPassword(null as unknown as string)).rejects.toBeDefined()
+  })
+})

@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
+import { safeFetch } from '../lib/safeFetch'
 
 interface Props {
   id: string
 }
 
 type PageState =
+  | { status: 'probing' }
   | { status: 'prompt' }
   | { status: 'loading' }
   | { status: 'success'; title: string; body: string; slug: string }
@@ -15,10 +17,31 @@ type PageState =
   | { status: 'not_found' }
   | { status: 'error'; message: string }
 
+type ShareResponse = { article: { title: string; body: string }; slug: string }
+
 export function SharePage({ id }: Props) {
-  const [state, setState] = useState<PageState>({ status: 'prompt' })
+  const [state, setState] = useState<PageState>({ status: 'probing' })
   const [password, setPassword] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Probe: try fetching without password. Public shares succeed; protected shares return 400.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const result = await safeFetch<ShareResponse>(`/api/share/${encodeURIComponent(id)}`)
+      if (cancelled) return
+      if (result.ok) {
+        setState({ status: 'success', title: result.data.article.title, body: result.data.article.body, slug: result.data.slug })
+        return
+      }
+      if (result.status === 400) { setState({ status: 'prompt' }); return }
+      if (result.status === 410) { setState({ status: 'expired' }); return }
+      if (result.status === 404) { setState({ status: 'not_found' }); return }
+      if (result.status === 403 && result.error.toLowerCase().includes('lock')) { setState({ status: 'locked' }); return }
+      setState({ status: 'error', message: result.error })
+    })()
+    return () => { cancelled = true }
+  }, [id])
 
   // Focus input when showing prompt
   useEffect(() => {
@@ -32,48 +55,42 @@ export function SharePage({ id }: Props) {
     if (!password.trim()) return
     setState({ status: 'loading' })
 
-    try {
-      const params = new URLSearchParams({ password })
-      const res = await fetch(`/api/share/${encodeURIComponent(id)}?${params}`)
+    const params = new URLSearchParams({ password })
+    const result = await safeFetch<ShareResponse>(`/api/share/${encodeURIComponent(id)}?${params}`)
 
-      if (res.ok) {
-        const data = await res.json() as { article: { title: string; body: string }; slug: string }
-        setState({ status: 'success', title: data.article.title, body: data.article.body, slug: data.slug })
-        return
-      }
-
-      if (res.status === 401 || res.status === 403) {
-        let json: { error?: string } = {}
-        try { json = await res.json() } catch { /* ignore */ }
-        if (json.error?.toLowerCase().includes('locked') || json.error?.toLowerCase().includes('too many')) {
-          setState({ status: 'locked' })
-          return
-        }
-        setState({ status: 'wrong_password' })
-        setPassword('')
-        return
-      }
-
-      if (res.status === 410) {
-        setState({ status: 'expired' })
-        return
-      }
-
-      if (res.status === 404) {
-        setState({ status: 'not_found' })
-        return
-      }
-
-      const json = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string }
-      setState({ status: 'error', message: json.error ?? 'Unknown error' })
-    } catch (err) {
-      setState({ status: 'error', message: err instanceof Error ? err.message : 'Network error' })
+    if (result.ok) {
+      setState({ status: 'success', title: result.data.article.title, body: result.data.article.body, slug: result.data.slug })
+      return
     }
+
+    if (result.status === 401 || result.status === 403) {
+      if (result.error.toLowerCase().includes('lock') || result.error.toLowerCase().includes('too many')) {
+        setState({ status: 'locked' })
+        return
+      }
+      setState({ status: 'wrong_password' })
+      setPassword('')
+      return
+    }
+    if (result.status === 410) { setState({ status: 'expired' }); return }
+    if (result.status === 404) { setState({ status: 'not_found' }); return }
+
+    setState({ status: 'error', message: result.error })
   }
 
   function retry() {
     setState({ status: 'prompt' })
     setPassword('')
+  }
+
+  if (state.status === 'probing') {
+    return (
+      <div className="share-page share-page--gate">
+        <div className="share-page__gate-card">
+          <p className="share-page__gate-desc" role="status" aria-live="polite">Loading…</p>
+        </div>
+      </div>
+    )
   }
 
   if (state.status === 'success') {

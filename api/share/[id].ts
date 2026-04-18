@@ -105,6 +105,13 @@ async function handleGet(req: VercelRequest, res: VercelResponse): Promise<void>
     return
   }
 
+  // No-password share — skip verification, return article directly
+  if (record.passwordHash === null) {
+    const article = await fetchArticle(record.slug)
+    res.status(200).json({ article, slug: record.slug })
+    return
+  }
+
   if (!password) {
     res.status(400).json({ error: 'Missing password query param' })
     return
@@ -217,13 +224,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return
   }
 
-  if (req.method === 'GET') {
-    return handleGet(req, res)
-  }
+  try {
+    if (req.method === 'GET') {
+      return await handleGet(req, res)
+    }
 
-  if (req.method === 'DELETE') {
-    return handleDelete(req, res)
-  }
+    if (req.method === 'DELETE') {
+      return await handleDelete(req, res)
+    }
 
-  res.status(405).json({ error: 'Method not allowed' })
+    res.status(405).json({ error: 'Method not allowed' })
+  } catch (e) {
+    console.error('[share/:id] unhandled error:', e)
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Sharing service temporarily unavailable. Please try again.' })
+    }
+  }
 }
