@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import type { ArticleMeta } from '../lib/storage/types'
 import { ProjectBadge } from '../components/ProjectBadge'
-import { navigate } from '../lib/router'
+import { navigate, useLang } from '../lib/router'
+import { useT } from '../lib/i18n'
 
 interface Props {
   articles: ArticleMeta[]
@@ -9,9 +10,10 @@ interface Props {
   error: string | null
 }
 
-function formatDayHeader(iso: string): string {
+function formatDayHeader(iso: string, lang: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const locale = lang === 'zh' ? 'zh-CN' : 'en-US'
+  return d.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 function groupByDay(articles: ArticleMeta[]): Map<string, ArticleMeta[]> {
@@ -32,13 +34,15 @@ function groupByDay(articles: ArticleMeta[]): Map<string, ArticleMeta[]> {
 }
 
 export function Timeline({ articles, loading, error }: Props) {
+  const t = useT()
+  const lang = useLang()
   const grouped = useMemo(() => groupByDay(articles), [articles])
 
   if (loading) {
     return (
       <div className="state-message" role="status" aria-live="polite">
-        <div className="state-message__spinner" aria-label="Loading" />
-        <p>Loading timeline...</p>
+        <div className="state-message__spinner" aria-label={t('state.loading')} />
+        <p>{t('timeline.loading')}</p>
       </div>
     )
   }
@@ -46,10 +50,10 @@ export function Timeline({ articles, loading, error }: Props) {
   if (error) {
     return (
       <div className="state-message state-message--error" role="alert">
-        <p>Failed to load timeline</p>
+        <p>{t('timeline.failed')}</p>
         <p className="state-message__detail">{error}</p>
         <button className="btn btn--secondary" onClick={() => navigate('/')} type="button">
-          Back to articles
+          {t('timeline.back')}
         </button>
       </div>
     )
@@ -58,18 +62,18 @@ export function Timeline({ articles, loading, error }: Props) {
   if (articles.length === 0) {
     return (
       <div className="state-message">
-        <p>No articles to display</p>
-        <p className="state-message__detail">Publish some session articles first</p>
+        <p>{t('timeline.empty')}</p>
+        <p className="state-message__detail">{t('timeline.emptyDetail')}</p>
       </div>
     )
   }
 
   return (
     <section className="timeline" aria-label="Timeline">
-      <h2 className="timeline__heading">Timeline</h2>
+      <h2 className="timeline__heading">{t('timeline.heading')}</h2>
       {Array.from(grouped.entries()).map(([day, dayArticles]) => (
         <div key={day} className="timeline__group">
-          <h3 className="timeline__date">{formatDayHeader(dayArticles[0].date)}</h3>
+          <h3 className="timeline__date">{formatDayHeader(dayArticles[0].date, lang)}</h3>
           <div className="timeline__track">
             {dayArticles.map((article) => (
               <div
@@ -84,7 +88,7 @@ export function Timeline({ articles, loading, error }: Props) {
                 }}
                 tabIndex={0}
                 role="button"
-                aria-label={`Read: ${article.title}`}
+                aria-label={t('timeline.read', { title: article.title })}
               >
                 <div className="timeline__marker" aria-hidden="true" />
                 <div className="timeline__content">

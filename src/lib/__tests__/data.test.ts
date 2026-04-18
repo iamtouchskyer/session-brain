@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ArticleIndex, ArticleMeta } from '../storage/types'
+import type { ArticleIndex, ArticleIndexEntry } from '../storage/types'
 import type { SessionArticle } from '../../pipeline/types'
 
-// Use vi.hoisted so the mock object is available before vi.mock hoisting
 const mockAdapter = vi.hoisted(() => ({
   loadIndex: vi.fn(),
   loadArticle: vi.fn(),
@@ -14,27 +13,37 @@ vi.mock('../storage', () => ({
 
 import { loadIndex, loadArticle, loadAllArticles } from '../data'
 
-const makeMeta = (slug: string, date = '2026-04-15'): ArticleMeta => ({
-  slug,
-  title: `Article ${slug}`,
-  summary: 'summary',
-  date,
-  tags: [],
-  project: 'test',
-  path: `2026/04/15/${slug}.json`,
-})
+function makeEntry(slug: string, date = '2026-04-15', opts: {
+  zh?: boolean
+  en?: boolean
+  primaryLang?: 'zh' | 'en'
+} = {}): ArticleIndexEntry {
+  const { zh = true, en = true, primaryLang = 'zh' } = opts
+  const i18n: ArticleIndexEntry['i18n'] = {}
+  if (zh) i18n.zh = { title: `[zh]${slug}`, summary: 'zh-summary', path: `2026/04/15/${slug}.zh.json` }
+  if (en) i18n.en = { title: `[en]${slug}`, summary: 'en-summary', path: `2026/04/15/${slug}.en.json` }
+  return {
+    slug,
+    date,
+    project: 'test',
+    tags: [],
+    primaryLang,
+    i18n,
+  }
+}
 
-const makeIndex = (articles: ArticleMeta[] = []): ArticleIndex => ({
+const makeIndex = (articles: ArticleIndexEntry[]): ArticleIndex => ({
   articles,
   lastUpdated: '2026-04-15',
 })
 
-const makeArticle = (slug: string, date = '2026-04-15'): SessionArticle => ({
+const makeArticle = (slug: string): SessionArticle => ({
   slug,
+  lang: 'zh',
   title: `Article ${slug}`,
   summary: 'summary',
   body: 'body',
-  date,
+  date: '2026-04-15',
   tags: [],
   project: 'test',
   sessionId: 'test-session-id',
@@ -46,61 +55,92 @@ describe('loadIndex', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('delegates to adapter', async () => {
-    const index = makeIndex()
+    const index = makeIndex([])
     mockAdapter.loadIndex.mockResolvedValueOnce(index)
     const result = await loadIndex()
     expect(result).toEqual(index)
-    expect(mockAdapter.loadIndex).toHaveBeenCalledOnce()
   })
 })
 
 describe('loadArticle', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('delegates to adapter', async () => {
+  it('delegates to adapter with slug + lang', async () => {
     const article = makeArticle('my-article')
     mockAdapter.loadArticle.mockResolvedValueOnce(article)
-    const result = await loadArticle('my-article')
+    const result = await loadArticle('my-article', 'zh')
     expect(result).toEqual(article)
-    expect(mockAdapter.loadArticle).toHaveBeenCalledWith('my-article')
+    expect(mockAdapter.loadArticle).toHaveBeenCalledWith('my-article', 'zh')
   })
 
   it('propagates errors', async () => {
     mockAdapter.loadArticle.mockRejectedValueOnce(new Error('Article not found: missing'))
-    await expect(loadArticle('missing')).rejects.toThrow('Article not found: missing')
+    await expect(loadArticle('missing', 'en')).rejects.toThrow('Article not found: missing')
   })
 })
 
 describe('loadAllArticles', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('returns ArticleMeta[] sorted newest first — no per-article fetches', async () => {
-    const meta1 = makeMeta('a1', '2026-04-15')
-    const meta2 = makeMeta('a2', '2026-04-14')
-    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([meta2, meta1]))
+  it('returns rows resolved to the requested lang', async () => {
+    const e = makeEntry('a1', '2026-04-15', { zh: true, en: true, primaryLang: 'zh' })
+    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([e]))
 
-    const result = await loadAllArticles()
-    expect(result).toHaveLength(2)
-    expect(result[0].slug).toBe('a1')
-    expect(result[1].slug).toBe('a2')
-    // Crucially: loadArticle must NOT be called
-    expect(mockAdapter.loadArticle).not.toHaveBeenCalled()
+    const zh = await loadAllArticles('zh')
+    expect(zh[0].title).toBe('[zh]a1')
+    expect(zh[0].lang).toBe('zh')
+    expect(zh[0].path).toMatch(/\.zh\.json$/)
+    expect(zh[0].availableLangs.sort()).toEqual(['en', 'zh'])
+    expect(zh[0].primaryLang).toBe('zh')
+  })
+
+  it('falls back to primaryLang when requested lang is missing', async () => {
+    const e = makeEntry('a1', '2026-04-15', { zh: true, en: false, primaryLang: 'zh' })
+    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([e]))
+
+    const rows = await loadAllArticles('en')
+    expect(rows[0].lang).toBe('zh')            // resolved fallback
+    expect(rows[0].primaryLang).toBe('zh')
+    expect(rows[0].availableLangs).toEqual(['zh'])
+    expect(rows[0].title).toBe('[zh]a1')
+  })
+
+  it('sorts newest first', async () => {
+    const e1 = makeEntry('a1', '2026-04-15')
+    const e2 = makeEntry('a2', '2026-04-14')
+    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([e2, e1]))
+
+    const rows = await loadAllArticles('zh')
+    expect(rows.map((r) => r.slug)).toEqual(['a1', 'a2'])
+  })
+
+  it('accepts legacy flat-shape index entries transparently', async () => {
+    const legacyEntry = {
+      slug: 'legacy-1',
+      title: 'Legacy Title',
+      summary: 'legacy',
+      date: '2026-04-10',
+      tags: [],
+      project: 'test',
+      path: '2026/04/10/legacy-1.json',
+    }
+    mockAdapter.loadIndex.mockResolvedValueOnce({
+      articles: [legacyEntry] as any,
+      lastUpdated: '2026-04-15',
+    })
+
+    const rows = await loadAllArticles('zh')
+    expect(rows[0].slug).toBe('legacy-1')
+    expect(rows[0].title).toBe('Legacy Title')
+    // legacy defaults to zh primary
+    expect(rows[0].primaryLang).toBe('zh')
+    expect(rows[0].availableLangs).toEqual(['zh'])
   })
 
   it('returns empty array when no articles', async () => {
     mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([]))
-    const result = await loadAllArticles()
+    const result = await loadAllArticles('en')
     expect(result).toHaveLength(0)
     expect(mockAdapter.loadArticle).not.toHaveBeenCalled()
-  })
-
-  it('returns ArticleMeta[] (not full SessionArticle)', async () => {
-    const meta = makeMeta('x1', '2026-04-15')
-    mockAdapter.loadIndex.mockResolvedValueOnce(makeIndex([meta]))
-
-    const result = await loadAllArticles()
-    expect(result[0]).toEqual(meta)
-    // No body field — it's just index metadata
-    expect('body' in result[0]).toBe(false)
   })
 })

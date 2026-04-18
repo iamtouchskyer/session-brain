@@ -5,6 +5,7 @@ import { useRoute } from './lib/router'
 import { useTheme } from './lib/theme'
 import { useAuth } from './lib/auth'
 import { ThemeToggle } from './components/ThemeToggle'
+import { LangToggle } from './components/LangToggle'
 import { Sidebar } from './components/Sidebar'
 import { ArticlesList } from './pages/ArticlesList'
 import { ArticleReader } from './pages/ArticleReader'
@@ -12,6 +13,7 @@ import { Timeline } from './pages/Timeline'
 import { Landing } from './pages/Landing'
 import { SharesManager } from './pages/SharesManager'
 import { SharePage } from './pages/SharePage'
+import { useT } from './lib/i18n'
 
 const SIDEBAR_COLLAPSED_KEY = 'logex-sidebar-collapsed'
 
@@ -29,6 +31,7 @@ function App() {
   const route = useRoute()
   const { theme, toggle } = useTheme()
   const { user, loading: authLoading, login, logout } = useAuth()
+  const t = useT()
 
   const [articles, setArticles] = useState<ArticleMeta[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,11 +51,11 @@ function App() {
   useEffect(() => {
     if (!user) return
     setLoading(true)
-    loadAllArticles()
+    loadAllArticles(route.lang)
       .then(setArticles)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [user])
+  }, [user, route.lang])
 
   const handleToggleCollapse = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -157,7 +160,7 @@ function App() {
 
   return (
     <div className="app app--with-sidebar">
-      <a href="#main-content" className="skip-link">Skip to content</a>
+      <a href="#main-content" className="skip-link">{t('auth.skipToContent')}</a>
 
       {/* Top header */}
       <header className="nav" role="banner">
@@ -179,12 +182,13 @@ function App() {
             <span className="nav__logo-text">Logex</span>
           </a>
 
-          <div className="nav__actions">
+            <div className="nav__actions">
             <div className="nav__user">
               {user.avatar && <img src={user.avatar} alt="" className="nav__avatar" />}
               <span className="nav__username">{user.login}</span>
-              <button className="nav__logout" onClick={logout} type="button">Logout</button>
+              <button className="nav__logout" onClick={logout} type="button">{t('auth.logout')}</button>
             </div>
+            <LangToggle />
             <ThemeToggle theme={theme} toggle={toggle} />
           </div>
         </div>
@@ -210,8 +214,8 @@ function App() {
           <footer className="footer" role="contentinfo">
             <p className="footer__text">
               {loading
-                ? 'Loading...'
-                : `${articles.length} article${articles.length !== 1 ? 's' : ''} from ${sessionCount} session${sessionCount !== 1 ? 's' : ''}`}
+                ? t('footer.loading')
+                : `${articles.length} ${articles.length !== 1 ? t('footer.articlePlural') : t('footer.articleSingular')} ${t('footer.from')} ${sessionCount} ${sessionCount !== 1 ? t('footer.sessionPlural') : t('footer.sessionSingular')}`}
             </p>
           </footer>
         </div>

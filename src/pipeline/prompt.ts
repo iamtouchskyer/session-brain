@@ -1,18 +1,28 @@
-import type { Chunk, TopicSegment } from './types'
+import type { Chunk, Lang, SessionArticle, TopicSegment } from './types'
+
+interface ArticlePromptOptions {
+  segment?: TopicSegment
+  maxTotalChars?: number
+  /** Target language for the generated article. Defaults to 'zh' for backward compat. */
+  lang?: Lang
+}
 
 /**
  * Build the article prompt from filtered chunks.
- * Produces a prompt for writing a full session paper (blog article).
- * If segment is provided, adds project and topic hint for focus.
+ * Produces a prompt for writing a full session paper (blog article) in the
+ * requested language. If segment is provided, adds project and topic hint
+ * for focus.
  */
 export function buildArticlePrompt(
   chunks: Chunk[],
   sessionId: string,
   meta: { entries: number; messages: number; chunks: number; startTime: string; endTime: string },
-  options?: { segment?: TopicSegment; maxTotalChars?: number },
+  options?: ArticlePromptOptions,
 ): string {
   const maxTotalChars = options?.maxTotalChars ?? 50000
   const segment = options?.segment
+  const lang: Lang = options?.lang ?? 'zh'
+
   const sorted = [...chunks].sort(
     (a, b) => (b.insightScore ?? 0) - (a.insightScore ?? 0),
   )
@@ -38,6 +48,24 @@ export function buildArticlePrompt(
 
   const transcript = segments.join('\n\n---\n\n')
 
+  const metaBlock = `## Session metadata
+- Session ID: ${sessionId}
+- Entries: ${meta.entries}
+- Messages: ${meta.messages}
+- Chunks: ${meta.chunks}
+- Time range: ${meta.startTime} → ${meta.endTime}
+${segment ? `- Project: ${segment.project ?? 'unknown'}\n- Topic: ${segment.topicHint}\n- Segment time: ${segment.timeRange[0]} → ${segment.timeRange[1]}` : ''}`
+
+  if (lang === 'en') {
+    return buildEnArticlePrompt(transcript, metaBlock)
+  }
+  return buildZhArticlePrompt(transcript, metaBlock)
+}
+
+// ---------------------------------------------------------------------------
+// Chinese (zh) article prompt — the original, preserved verbatim
+// ---------------------------------------------------------------------------
+function buildZhArticlePrompt(transcript: string, metaBlock: string): string {
   return `你是一个技术博客作者。你的写作风格参考以下真实博客：
 
 ## 写作风格参考
@@ -92,19 +120,194 @@ export function buildArticlePrompt(
 }
 \`\`\`
 
-## Session metadata
-- Session ID: ${sessionId}
-- Entries: ${meta.entries}
-- Messages: ${meta.messages}
-- Chunks: ${meta.chunks}
-- Time range: ${meta.startTime} → ${meta.endTime}
-${segment ? `- Project: ${segment.project ?? 'unknown'}\n- Topic: ${segment.topicHint}\n- Segment time: ${segment.timeRange[0]} → ${segment.timeRange[1]}` : ''}
+${metaBlock}
 
 ## Session transcript
 
 ${transcript}
 
 写文章。只输出 JSON object，不要其他内容。`
+}
+
+// ---------------------------------------------------------------------------
+// English (en) article prompt — parallel rewrite, NOT a translation of the zh
+// prompt. Same voice, same anti-patterns, same JSON shape.
+// ---------------------------------------------------------------------------
+function buildEnArticlePrompt(transcript: string, metaBlock: string): string {
+  return `You are a technical blogger. Your voice borrows from real engineering writing — direct, opinionated, specific.
+
+## Voice reference
+
+**Opening**: Always start with a concrete scene or problem, never an abstract summary. Drop the reader into the moment.
+- ✅ "The first time I noticed the AI review was phoning it in, it had just said 'Code looks correct.'"
+- ✅ "Anyone who uses an AI coding agent has had this moment: you spend twenty minutes in session A teaching the agent a bug pattern..."
+- ❌ "This post introduces how we built Session Brain..."
+- ❌ "Using an OPC loop, we completed the following in a single session..."
+
+**Have a spine**: Take positions. Say "this is over-engineered", "I'm not going to pretend this is a breakthrough", "that isn't a bug — you can't fix an architectural property". No hedge-everything prose.
+
+**Be honest**: Show trade-offs. Admit what didn't work. "OPC found fewer code bugs — but it caught five things Claude was blind to." Don't only write the success case.
+
+**Structured but not mechanical**: Use \`##\` headings, but let sections flow as narrative. Use \`---\` for visual breathing room. Code blocks, diagrams, and tables live *inside* the narrative, not piled at the bottom.
+
+**Keep technical terms in their native form**: Don't translate or rename known terms — \`context window\`, \`pre-commit hook\`, \`session\`, \`pipeline\`, \`rubric\`, \`OAuth\`, \`JWT\` stay as-is. Technical vocabulary is a shared dialect; translating it breaks the handshake.
+
+**A little warmth**: Occasional first-person voice — "the lazy path is the only one I'll actually use", "this one was dragged out of me by a failure mode". Not a cold spec sheet.
+
+**Be specific**: Give file paths, error messages, numbers. "67 vitest unit tests and 12 Playwright E2E tests" beats "comprehensive test coverage" ten times over.
+
+## Anti-patterns (hard bans)
+
+- No emoji in section headings (❌ "🎯 Goals", "🛠️ Process"). Use plain \`##\` titles.
+- No bullet-list summaries pretending to be content (❌ "Ported pipeline, built UI, wrote tests, deployed."). Write narrative.
+- No throat-clearing openings (❌ "In this post...", "This article describes..."). Drop us into the story.
+- No generic praise (❌ "this is a great approach"). Say *why* it's good — or where it's weak.
+- Don't fake perfection. If the session pivoted mid-way, fell into a trap, or made a compromise — write it. That's the value.
+
+## Task
+
+From the session transcript below, write one technical blog post.
+
+**Article shape (reference, not a rigid template)**:
+1. Opening: one concrete scene (pick the most dramatic moment in the transcript).
+2. Context: why this matters.
+3. Narrative: how it went, including wrong turns, reversals, gotchas.
+4. Key insights: what's actually worth remembering, in hindsight.
+5. Close: honest verdict + what's next.
+
+**Don't literally copy those section names. Let the content drive the structure.**
+
+## Output format (JSON)
+\`\`\`json
+{
+  "title": "One-line title with a hook",
+  "summary": "2-3 sentences, reads like a blog meta description that makes you want to click",
+  "body": "Full markdown article (1500-3000 words)",
+  "tags": ["tag1", "tag2", ...],
+  "project": "primary-project-name"
+}
+\`\`\`
+
+${metaBlock}
+
+## Session transcript
+
+${transcript}
+
+Write the article. Output only the JSON object — nothing else.`
+}
+
+// ---------------------------------------------------------------------------
+// Translation + rewrite prompt.
+// The goal is NOT a literal translation — it's a parallel-voice rewrite
+// that preserves structure, code, paths, and numbers but reads natively in
+// the target language.
+// ---------------------------------------------------------------------------
+export interface TranslatableArticle {
+  title: string
+  summary: string
+  body: string
+  tags: string[]
+  project?: string
+}
+
+export function buildTranslateRewritePrompt(
+  source: TranslatableArticle,
+  sourceLang: Lang,
+  targetLang: Lang,
+): string {
+  if (sourceLang === targetLang) {
+    throw new Error(`buildTranslateRewritePrompt: source and target are both ${sourceLang}`)
+  }
+
+  const langNameEn = targetLang === 'en' ? 'English' : 'Chinese'
+  const langNameCn = targetLang === 'en' ? '英文' : '中文'
+  const sourceNameEn = sourceLang === 'en' ? 'English' : 'Chinese'
+
+  const header = targetLang === 'en'
+    ? `You are rewriting a technical blog article from ${sourceNameEn} into ${langNameEn}.
+This is a REWRITE, not a translation — the result must read like it was written natively in ${langNameEn}.`
+    : `你要把一篇技术博客从${sourceNameEn === 'English' ? '英文' : '中文'}改写成${langNameCn}。
+这是**改写**不是翻译 —— 最终读起来必须像原生${langNameCn}写的。`
+
+  const rules = `## Hard rules
+
+1. Keep ALL of the following **unchanged, character-for-character**:
+   - Code blocks (\`\`\`...\`\`\`) and inline code (\`...\`)
+   - File paths (e.g. \`src/pipeline/publish.ts\`)
+   - Command-line invocations
+   - Error messages and log lines
+   - Numbers and URLs
+   - Names of libraries, frameworks, commands, and products (React, Playwright, vitest, Claude, OPC, Vercel, etc.)
+
+2. **Don't translate technical terms that are conventionally English**, even in Chinese prose:
+   session, pipeline, prompt, rubric, hook, token, cache, JWT, OAuth, context window,
+   pre-commit, E2E, CI, SDK, MCP, subagent, chunk, retry, fallback, schema, API.
+   (In English prose these already are English; leave them be.)
+
+3. **Title must be rewritten with a hook**, not mechanically translated. Find a
+   phrasing that works natively in the target language. Same energy, different words.
+
+4. **Preserve the markdown structure**: same \`##\` sections, same ordering of
+   code blocks and tables, same \`---\` separators. Section headings should be
+   rewritten to read naturally in the target language.
+
+5. **Keep the voice**: specific, opinionated, warm, honest about trade-offs.
+   If the source hedges, the rewrite hedges. If the source is blunt, the rewrite is blunt.
+
+6. \`tags\` are internal identifiers — **do not translate**. Return them unchanged.
+
+7. \`project\` is a project key — **do not translate**. Return unchanged (or omitted if absent).
+
+## Output format (JSON only, no prose)
+\`\`\`json
+{
+  "title": "...",
+  "summary": "...",
+  "body": "...",
+  "tags": [...],
+  "project": "..."
+}
+\`\`\`
+
+Output only the JSON object.`
+
+  const sourcePayload = `## Source article (${sourceNameEn})
+
+### title
+${source.title}
+
+### summary
+${source.summary}
+
+### tags
+${JSON.stringify(source.tags)}
+
+### project
+${source.project ?? ''}
+
+### body
+${source.body}`
+
+  return `${header}
+
+${rules}
+
+${sourcePayload}`
+}
+
+/**
+ * Narrow helper: convert a full SessionArticle into the minimal
+ * TranslatableArticle shape used by the translation prompt.
+ */
+export function toTranslatable(a: SessionArticle): TranslatableArticle {
+  return {
+    title: a.title,
+    summary: a.summary,
+    body: a.body,
+    tags: a.tags,
+    project: a.project,
+  }
 }
 
 /**

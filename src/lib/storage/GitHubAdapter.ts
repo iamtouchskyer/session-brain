@@ -1,5 +1,6 @@
-import type { SessionArticle } from '../../pipeline/types'
-import type { StorageAdapter, ArticleIndex } from './types'
+import type { SessionArticle, Lang } from '../../pipeline/types'
+import type { StorageAdapter, ArticleIndex, ArticleIndexEntry, ArticleIndexEntryLegacy } from './types'
+import { normalizeIndexEntry } from './types'
 
 const REPO = import.meta.env.VITE_GITHUB_REPO ?? 'iamtouchskyer/logex-data'
 const BRANCH = import.meta.env.VITE_GITHUB_BRANCH ?? 'main'
@@ -86,28 +87,19 @@ async function fetchWithCache<T>(url: string, ttl: number): Promise<T> {
       return data
     } catch (e) {
       const msg = (e as Error)?.message ?? ''
-      // Re-throw real fetch errors; swallow cache errors and fall through
       if (msg.startsWith('Fetch failed:')) throw e
-      if (msg !== 'corrupt-cache-entry') {
-        // Unknown cache error — fall through to plain fetch
-      }
+      if (msg !== 'corrupt-cache-entry') { /* fall through */ }
     }
   }
-  // Fallback: no Cache API
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Fetch failed: ${url} (${res.status})`)
   return res.json()
 }
 
-// ---------------------------------------------------------------------------
-// Core fetch helpers
-// ---------------------------------------------------------------------------
 function rawUrl(path: string): string {
   if (TOKEN) {
-    // Use API for private repos
     return `https://api.github.com/repos/${REPO}/contents/${path}`
   }
-  // Public repo — use jsDelivr CDN (has Chinese CDN nodes, raw.githubusercontent.com is GFW-blocked)
   return `https://cdn.jsdelivr.net/gh/${REPO}@${BRANCH}/${path}`
 }
 
@@ -115,7 +107,6 @@ async function fetchFile<T>(path: string, ttl: number): Promise<T> {
   const url = rawUrl(path)
 
   if (TOKEN) {
-    // Private repo via GitHub API — no Cache Storage (auth headers can't be cached safely)
     const cached = getCached<T>(`mem:${path}`)
     if (cached !== null) return cached
     const headers: Record<string, string> = {
@@ -129,12 +120,10 @@ async function fetchFile<T>(path: string, ttl: number): Promise<T> {
     return data
   }
 
-  // Public CDN: mem cache → in-flight dedup → Cache Storage → network
   const memKey = `pub:${path}`
   const memHit = getCached<T>(memKey)
   if (memHit !== null) return memHit
 
-  // In-flight dedup: if same key already being fetched, wait for that promise
   const existing = inFlight.get(memKey)
   if (existing) return existing as Promise<T>
 
@@ -150,18 +139,27 @@ async function fetchFile<T>(path: string, ttl: number): Promise<T> {
   return promise
 }
 
-// ---------------------------------------------------------------------------
-// Adapter
-// ---------------------------------------------------------------------------
 export class GitHubAdapter implements StorageAdapter {
   async loadIndex(): Promise<ArticleIndex> {
     return fetchFile<ArticleIndex>('index.json', TTL_INDEX)
   }
 
-  async loadArticle(slug: string): Promise<SessionArticle> {
+  async loadArticle(slug: string, lang: Lang): Promise<SessionArticle> {
     const index = await this.loadIndex()
-    const meta = index.articles.find((a) => a.slug === slug)
-    if (!meta) throw new Error(`Article not found: ${slug}`)
+    const raw = index.articles.find((a) => a.slug === slug) as
+      | ArticleIndexEntry
+      | ArticleIndexEntryLegacy
+      | undefined
+    if (!raw) throw new Error(`Article not found: ${slug}`)
+    const entry = normalizeIndexEntry(raw)
+    // Pick: requested lang → primaryLang → any available
+    const target: Lang = entry.i18n[lang]
+      ? lang
+      : entry.i18n[entry.primaryLang]
+        ? entry.primaryLang
+        : (Object.keys(entry.i18n)[0] as Lang)
+    const meta = entry.i18n[target]
+    if (!meta) throw new Error(`Article has no content in any language: ${slug}`)
     return fetchFile<SessionArticle>(meta.path, TTL_ARTICLE)
   }
 }

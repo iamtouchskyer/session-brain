@@ -1,10 +1,13 @@
+import { useT } from '../lib/i18n'
+
 interface Props {
   value: string
   onChange: (value: string) => void
   placeholder?: string
 }
 
-export function SearchBar({ value, onChange, placeholder = 'Search insights...' }: Props) {
+export function SearchBar({ value, onChange, placeholder }: Props) {
+  const t = useT()
   return (
     <div className="search-bar">
       <svg
@@ -27,15 +30,15 @@ export function SearchBar({ value, onChange, placeholder = 'Search insights...' 
         className="search-bar__input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        aria-label="Search insights"
+        placeholder={placeholder ?? t('search.placeholder')}
+        aria-label={t('search.ariaLabel')}
       />
       {value && (
         <button
           className="search-bar__clear"
           onClick={() => onChange('')}
           type="button"
-          aria-label="Clear search"
+          aria-label={t('search.clear')}
         >
           &times;
         </button>

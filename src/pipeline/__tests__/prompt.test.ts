@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildExtractionPrompt } from '../prompt'
+import { buildExtractionPrompt, buildArticlePrompt, buildTranslateRewritePrompt } from '../prompt'
 import type { Chunk, Message } from '../types'
 
 function makeMsg(role: 'user' | 'assistant', text: string): Message {
@@ -110,5 +110,89 @@ describe('buildExtractionPrompt', () => {
     expect(prompt).toContain('Extract card-worthy insights')
     // No segments, but prompt is still valid
     expect(prompt).not.toContain('Segment 1')
+  })
+})
+
+describe('buildArticlePrompt', () => {
+  const meta = {
+    entries: 10,
+    messages: 20,
+    chunks: 5,
+    startTime: '2026-04-01T00:00:00Z',
+    endTime: '2026-04-01T01:00:00Z',
+  }
+
+  it('defaults to zh prompt when lang is not specified', () => {
+    const chunk = makeChunk(0.8, 'Some user content')
+    const prompt = buildArticlePrompt([chunk], 'session-1', meta)
+    expect(prompt).toContain('你是一个技术博客作者')
+    expect(prompt).not.toContain('You are a technical blogger')
+  })
+
+  it('emits en prompt when lang=en', () => {
+    const chunk = makeChunk(0.8, 'Some user content')
+    const prompt = buildArticlePrompt([chunk], 'session-1', meta, { lang: 'en' })
+    expect(prompt).toContain('You are a technical blogger')
+    expect(prompt).toContain('Output only the JSON object')
+    expect(prompt).not.toContain('写文章')
+  })
+
+  it('emits zh prompt when lang=zh', () => {
+    const chunk = makeChunk(0.8, 'Some user content')
+    const prompt = buildArticlePrompt([chunk], 'session-1', meta, { lang: 'zh' })
+    expect(prompt).toContain('你是一个技术博客作者')
+  })
+
+  it('includes session metadata in both languages', () => {
+    const chunk = makeChunk(0.8, 'Some user content')
+    const zh = buildArticlePrompt([chunk], 'abc-123', meta, { lang: 'zh' })
+    const en = buildArticlePrompt([chunk], 'abc-123', meta, { lang: 'en' })
+    expect(zh).toContain('abc-123')
+    expect(en).toContain('abc-123')
+  })
+})
+
+describe('buildTranslateRewritePrompt', () => {
+  const sample = {
+    title: '从 Session 到 Paper：OPC Loop 的第一步',
+    summary: '用 OPC loop 把 Claude session 转成博客文章的第一次尝试。',
+    body: '## 背景\n\n每个 session 都值得成为一篇文章。\n\n```ts\nconst x = 1\n```\n\n`src/pipeline/extract.ts` 是入口。',
+    tags: ['opc', 'logex', 'pipeline'],
+    project: 'logex',
+  }
+
+  it('translates zh → en', () => {
+    const prompt = buildTranslateRewritePrompt(sample, 'zh', 'en')
+    expect(prompt).toContain('rewriting a technical blog article')
+    expect(prompt).toContain('English')
+    // Source content must be embedded
+    expect(prompt).toContain(sample.title)
+    expect(prompt).toContain('src/pipeline/extract.ts')
+  })
+
+  it('translates en → zh', () => {
+    const enSample = { ...sample, title: 'From Session to Paper', body: '## Background\n\nText.' }
+    const prompt = buildTranslateRewritePrompt(enSample, 'en', 'zh')
+    expect(prompt).toContain('改写')
+    expect(prompt).toContain('中文')
+    expect(prompt).toContain('From Session to Paper')
+  })
+
+  it('preserves code blocks and file paths verbatim in rules', () => {
+    const prompt = buildTranslateRewritePrompt(sample, 'zh', 'en')
+    expect(prompt).toContain('Code blocks')
+    expect(prompt).toContain('File paths')
+    expect(prompt).toContain('character-for-character')
+  })
+
+  it('instructs not to translate tags and project', () => {
+    const prompt = buildTranslateRewritePrompt(sample, 'zh', 'en')
+    expect(prompt).toMatch(/tags.*internal identifiers/)
+    expect(prompt).toMatch(/project.*project key/)
+  })
+
+  it('throws when source and target languages match', () => {
+    expect(() => buildTranslateRewritePrompt(sample, 'zh', 'zh')).toThrow()
+    expect(() => buildTranslateRewritePrompt(sample, 'en', 'en')).toThrow()
   })
 })

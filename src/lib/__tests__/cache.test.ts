@@ -80,7 +80,7 @@ describe('loadAllArticles integration — uses index only', () => {
     const { loadAllArticles } = await import('../data')
     // Note: adapter is created once at module level so this test
     // primarily validates that the function signature returns an array
-    const result = await loadAllArticles()
+    const result = await loadAllArticles('en')
     expect(Array.isArray(result)).toBe(true)
 
     vi.unstubAllGlobals()

@@ -1,11 +1,18 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
+import type { Lang } from './types'
 
 /**
  * publish.ts — Deterministic publish pipeline for logex articles.
  *
  * Code handles: reading index, writing files, upsert mechanics.
- * LLM handles: deciding which new articles match existing ones.
+ * LLM handles: (a) deciding which new articles match existing ones,
+ *              (b) generating primary-language article + translation.
+ *
+ * i18n note: every article has a `lang` field (primary language) and an
+ * optional `translations` map keyed by other Lang. publish.ts writes one
+ * file per language as `<slug>.<lang>.json` and emits an index entry with
+ * `primaryLang` + `i18n: Partial<Record<Lang, { title, summary, path }>>`.
  *
  * Two modes:
  *   1. `prepare-match` — reads index + new articles, outputs a matchingPrompt
@@ -13,15 +20,11 @@ import { join, dirname } from 'path'
  *   2. `execute` — takes the LLM's matching decisions and writes files.
  *
  * Usage:
- *   # Step 1: get matching prompt
  *   npx tsx src/pipeline/publish.ts prepare-match \
  *     --data-dir ~/Code/logex-data \
  *     --session-id abc123 \
  *     --articles /tmp/articles.json
  *
- *   # Step 2: LLM executes the prompt, outputs matching decisions
- *
- *   # Step 3: execute publish
  *   npx tsx src/pipeline/publish.ts execute \
  *     --data-dir ~/Code/logex-data \
  *     --session-id abc123 \
@@ -30,26 +33,52 @@ import { join, dirname } from 'path'
  */
 
 // ─── Types ────────────────────────────────────────────────────────────
-// Note: SessionArticle in types.ts defines the canonical article shape.
-// Types below are publish-specific (CLI I/O concerns).
+
+interface LangContent {
+  title: string
+  summary: string
+  body: string
+}
 
 interface NewArticle {
   title: string
   summary: string
   body: string
+  /** Primary (source-of-truth) language for this article. Defaults to 'zh'. */
+  lang?: Lang
+  /** Optional translations keyed by target language. */
+  translations?: Partial<Record<Lang, LangContent>>
   tags: string[]
   project?: string
   chunkIndices: number[]
-  slug?: string  // LLM-suggested slug, optional
-  stats?: Record<string, unknown>  // optional stats from prepare output
+  slug?: string
+  stats?: Record<string, unknown>
+}
+
+interface LangMeta {
+  title: string
+  summary: string
+  path: string
 }
 
 interface ExistingArticleMeta {
   slug: string
-  title: string
+  // Legacy flat shape:
+  title?: string
+  summary?: string
+  path?: string
+  // New i18n shape:
+  primaryLang?: Lang
+  i18n?: Partial<Record<Lang, LangMeta>>
+  // Common:
+  date?: string
   sessionId?: string
   chunkIndices?: number[]
-  path?: string
+  tags?: string[]
+  project?: string
+  heroImage?: string
+  duration?: string
+  stats?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -59,9 +88,9 @@ interface IndexFile {
 }
 
 interface MatchDecision {
-  newIndex: number           // 0-based index into new articles array
+  newIndex: number
   action: 'update' | 'insert'
-  existingSlug?: string      // which existing article to update (if action=update)
+  existingSlug?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -75,15 +104,12 @@ function loadIndex(dataDir: string): IndexFile {
 }
 
 function generateSlug(article: NewArticle, sessionId: string, index: number, date: string): string {
-  // Use LLM-suggested slug if present
   if (article.slug && article.slug.length > 10) {
-    // Ensure date prefix
     if (!article.slug.startsWith(date)) {
       return `${date}-${article.slug}`
     }
     return article.slug
   }
-  // Fallback: date + sessionId prefix + index
   return `${date}-${sessionId.slice(0, 8)}-article-${index + 1}`
 }
 
@@ -92,19 +118,48 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/**
+ * Build the on-disk relative path for a (slug, lang) pair.
+ * Always language-suffixed now: `YYYY/MM/DD/<slug>.<lang>.json`.
+ */
+function articlePath(slug: string, lang: Lang): string {
+  const parts = slug.slice(0, 10).split('-')
+  return `${parts[0]}/${parts[1]}/${parts[2]}/${slug}.${lang}.json`
+}
+
+/**
+ * Collect (lang, content) pairs from an article: primary + all translations.
+ * Primary first.
+ */
+function enumerateLangContent(article: NewArticle): Array<{ lang: Lang; content: LangContent }> {
+  const primary: Lang = article.lang ?? 'zh'
+  const out: Array<{ lang: Lang; content: LangContent }> = [
+    {
+      lang: primary,
+      content: { title: article.title, summary: article.summary, body: article.body },
+    },
+  ]
+  if (article.translations) {
+    for (const [lang, content] of Object.entries(article.translations) as Array<[Lang, LangContent]>) {
+      if (lang === primary) continue  // primary already added
+      if (!content) continue
+      out.push({ lang, content })
+    }
+  }
+  return out
+}
+
 // ─── prepare-match ───────────────────────────────────────────────────
 
 function prepareMatch(dataDir: string, sessionId: string, articlesPath: string): void {
   const index = loadIndex(dataDir)
   const newArticles: NewArticle[] = JSON.parse(readFileSync(articlesPath, 'utf-8'))
 
-  // Find existing articles from same session
   const existing = index.articles.filter(
     (a) => a.sessionId === sessionId && a.chunkIndices && a.chunkIndices.length > 0
   )
 
   if (existing.length === 0) {
-    // No existing articles for this session — all inserts, no LLM needed
     const decisions: MatchDecision[] = newArticles.map((_, i) => ({
       newIndex: i,
       action: 'insert' as const,
@@ -117,10 +172,13 @@ function prepareMatch(dataDir: string, sessionId: string, articlesPath: string):
     return
   }
 
-  // Build matching prompt for LLM
   const existingDesc = existing.map((a, i) => {
     const ci = (a.chunkIndices ?? []).join(', ')
-    return `  [E${i}] slug: ${a.slug} | title: "${a.title}" | chunkIndices: [${ci}]`
+    // Support both legacy (title at top) and new (i18n[primaryLang].title) shapes
+    const title = a.title
+      ?? (a.primaryLang ? a.i18n?.[a.primaryLang]?.title : undefined)
+      ?? '(untitled)'
+    return `  [E${i}] slug: ${a.slug} | title: "${title}" | chunkIndices: [${ci}]`
   }).join('\n')
 
   const newDesc = newArticles.map((a, i) => {
@@ -183,7 +241,7 @@ function execute(
   const decisions: MatchDecision[] = decisionsRaw.decisions ?? decisionsRaw
 
   const date = today()
-  const results: Array<{ slug: string; action: string; title: string }> = []
+  const results: Array<{ slug: string; action: string; title: string; langs: Lang[] }> = []
 
   for (const dec of decisions) {
     const article = newArticles[dec.newIndex]
@@ -192,105 +250,134 @@ function execute(
       continue
     }
 
+    const primaryLang: Lang = article.lang ?? 'zh'
+    const langContents = enumerateLangContent(article)
+
+    // Will be resolved below.
+    let slug: string
+    let articleDate: string
+    let preservedHeroImage = ''
+    let preservedStats: Record<string, unknown> = (article.stats as Record<string, unknown>) ?? {}
+    let preservedDuration = ''
+    let isUpdate = false
+    let existingIdx = -1
+
     if (dec.action === 'update' && dec.existingSlug) {
-      // ── UPDATE: overwrite existing article, keep slug & path ──
-      const existingIdx = index.articles.findIndex((a) => a.slug === dec.existingSlug)
+      existingIdx = index.articles.findIndex((a) => a.slug === dec.existingSlug)
       if (existingIdx === -1) {
         console.error(`Warning: existing slug "${dec.existingSlug}" not found, treating as insert`)
-        dec.action = 'insert'
       } else {
         const existing = index.articles[existingIdx]
-        if (!existing.path) {
-          console.error(`Warning: existing slug "${dec.existingSlug}" has no path, treating as insert`)
-          dec.action = 'insert'
-        } else {
-        const filePath = join(dataDir, existing.path)
+        slug = existing.slug
+        articleDate = existing.date ?? existing.slug.slice(0, 10)
+        preservedHeroImage = (existing.heroImage as string) ?? ''
+        preservedDuration = (existing.duration as string) ?? ''
+        isUpdate = true
 
-        const articleData = {
-          slug: existing.slug,
-          title: article.title,
-          summary: article.summary,
-          body: article.body,
-          heroImage: (existing as any).heroImage ?? '',
-          tags: article.tags,
-          sessionId,
-          chunkIndices: article.chunkIndices,
-          project: article.project ?? '',
-          date: existing.slug.slice(0, 10), // preserve original date
-          duration: '',
-          stats: {},
+        // Try to read an existing body file to recover heroImage/stats/duration.
+        // Try new-schema path first, then legacy flat path.
+        const candidatePaths: string[] = []
+        const i18nEntries = existing.i18n ?? {}
+        for (const meta of Object.values(i18nEntries)) {
+          if (meta?.path) candidatePaths.push(meta.path)
         }
+        if (existing.path) candidatePaths.push(existing.path)
 
-        // Read existing to preserve stats/heroImage/duration
-        if (existsSync(filePath)) {
+        for (const p of candidatePaths) {
+          const abs = join(dataDir, p)
+          if (!existsSync(abs)) continue
           try {
-            const old = JSON.parse(readFileSync(filePath, 'utf-8'))
-            articleData.heroImage = old.heroImage ?? articleData.heroImage
-            articleData.stats = old.stats ?? {}
-            articleData.duration = old.duration ?? ''
+            const old = JSON.parse(readFileSync(abs, 'utf-8'))
+            preservedHeroImage = old.heroImage ?? preservedHeroImage
+            preservedStats = old.stats ?? preservedStats
+            preservedDuration = old.duration ?? preservedDuration
+            break
           } catch { /* ignore */ }
-        }
-
-        mkdirSync(dirname(filePath), { recursive: true })
-        writeFileSync(filePath, JSON.stringify(articleData, null, 2))
-
-        // Update index entry
-        index.articles[existingIdx] = {
-          ...existing,
-          title: article.title,
-          summary: article.summary,
-          tags: article.tags,
-          chunkIndices: article.chunkIndices,
-          project: article.project ?? existing.project,
-        }
-
-        results.push({ slug: existing.slug, action: 'updated', title: article.title })
-        continue
         }
       }
     }
 
-    // ── INSERT: new article ──
-    const slug = generateSlug(article, sessionId, dec.newIndex, date)
-    const dateParts = slug.slice(0, 10).split('-')
-    const relPath = `${dateParts[0]}/${dateParts[1]}/${dateParts[2]}/${slug}.json`
-    const filePath = join(dataDir, relPath)
-
-    const articleData = {
-      slug,
-      title: article.title,
-      summary: article.summary,
-      body: article.body,
-      heroImage: '',
-      tags: article.tags,
-      sessionId,
-      chunkIndices: article.chunkIndices,
-      project: article.project ?? '',
-      date: slug.slice(0, 10),
-      duration: '',
-      stats: article.stats ?? {},
+    if (!isUpdate) {
+      slug = generateSlug(article, sessionId, dec.newIndex, date)
+      articleDate = slug.slice(0, 10)
     }
 
-    mkdirSync(dirname(filePath), { recursive: true })
-    writeFileSync(filePath, JSON.stringify(articleData, null, 2))
+    // Write one file per language.
+    const i18nMap: Partial<Record<Lang, LangMeta>> = {}
+    for (const { lang, content } of langContents) {
+      const relPath = articlePath(slug!, lang)
+      const absPath = join(dataDir, relPath)
 
-    index.articles.push({
-      slug,
-      title: article.title,
-      summary: article.summary,
-      date: slug.slice(0, 10),
+      const articleData = {
+        slug: slug!,
+        lang,
+        title: content.title,
+        summary: content.summary,
+        body: content.body,
+        heroImage: preservedHeroImage,
+        tags: article.tags,
+        sessionId,
+        chunkIndices: article.chunkIndices,
+        project: article.project ?? '',
+        date: articleDate!,
+        duration: preservedDuration,
+        stats: preservedStats,
+      }
+
+      mkdirSync(dirname(absPath), { recursive: true })
+      writeFileSync(absPath, JSON.stringify(articleData, null, 2))
+
+      i18nMap[lang] = {
+        title: content.title,
+        summary: content.summary,
+        path: relPath,
+      }
+    }
+
+    // Compose index entry (new i18n schema).
+    const entry: ExistingArticleMeta = {
+      slug: slug!,
+      date: articleDate!,
+      project: article.project ?? '',
       tags: article.tags,
-      project: article.project,
-      chunkIndices: article.chunkIndices,
       sessionId,
-      heroImage: '',
-      path: relPath,
-    })
+      heroImage: preservedHeroImage,
+      chunkIndices: article.chunkIndices,
+      duration: preservedDuration,
+      stats: preservedStats as any,
+      primaryLang,
+      i18n: i18nMap,
+    }
 
-    results.push({ slug, action: 'inserted', title: article.title })
+    if (isUpdate && existingIdx !== -1) {
+      // Merge: keep any pre-existing translations that the new article didn't re-emit
+      const existing = index.articles[existingIdx]
+      const mergedI18n: Partial<Record<Lang, LangMeta>> = { ...(existing.i18n ?? {}) }
+      for (const [lang, meta] of Object.entries(i18nMap) as Array<[Lang, LangMeta]>) {
+        mergedI18n[lang] = meta
+      }
+      entry.i18n = mergedI18n
+      // Preserve primaryLang if already set on existing and not overridden
+      entry.primaryLang = article.lang ?? existing.primaryLang ?? primaryLang
+      index.articles[existingIdx] = entry
+      results.push({
+        slug: slug!,
+        action: 'updated',
+        title: article.title,
+        langs: Object.keys(mergedI18n) as Lang[],
+      })
+    } else {
+      index.articles.push(entry)
+      results.push({
+        slug: slug!,
+        action: 'inserted',
+        title: article.title,
+        langs: Object.keys(i18nMap) as Lang[],
+      })
+    }
   }
 
-  // Sort by date desc, deduplicate
+  // Sort by date desc, deduplicate by slug
   index.articles.sort((a, b) => (b.slug > a.slug ? 1 : -1))
   const seen = new Set<string>()
   index.articles = index.articles.filter((a) => {
@@ -302,7 +389,6 @@ function execute(
 
   writeFileSync(join(dataDir, 'index.json'), JSON.stringify(index, null, 2))
 
-  // Output results
   console.log(JSON.stringify({ results, totalArticles: index.articles.length }))
 }
 

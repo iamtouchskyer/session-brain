@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import type { ArticleMeta } from '../lib/storage/types'
 import { ArticleCard } from '../components/ArticleCard'
 import { SearchBar } from '../components/SearchBar'
+import { useT } from '../lib/i18n'
 
 interface Props {
   articles: ArticleMeta[]
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ArticlesList({ articles, loading, error }: Props) {
+  const t = useT()
   const [search, setSearch] = useState('')
   const [activeProject, setActiveProject] = useState('ALL')
 
@@ -31,7 +33,7 @@ export function ArticlesList({ articles, loading, error }: Props) {
         (a) =>
           a.title.toLowerCase().includes(q) ||
           a.summary.toLowerCase().includes(q) ||
-          (a.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+          (a.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
       )
     }
 
@@ -41,8 +43,8 @@ export function ArticlesList({ articles, loading, error }: Props) {
   if (loading) {
     return (
       <div className="state-message" role="status" aria-live="polite">
-        <div className="state-message__spinner" aria-label="Loading" />
-        <p>Loading articles...</p>
+        <div className="state-message__spinner" aria-label={t('state.loading')} />
+        <p>{t('articlesList.loading')}</p>
       </div>
     )
   }
@@ -50,7 +52,7 @@ export function ArticlesList({ articles, loading, error }: Props) {
   if (error) {
     return (
       <div className="state-message state-message--error" role="alert">
-        <p>Failed to load articles</p>
+        <p>{t('articlesList.failed')}</p>
         <p className="state-message__detail">{error}</p>
       </div>
     )
@@ -58,9 +60,9 @@ export function ArticlesList({ articles, loading, error }: Props) {
 
   return (
     <section className="articles-list" aria-label="Articles">
-      <h1 className="sr-only">Session Articles</h1>
+      <h1 className="sr-only">{t('articlesList.heading')}</h1>
       <div className="articles-list__controls">
-        <div className="articles-list__filters" role="group" aria-label="Filter by project">
+        <div className="articles-list__filters" role="group" aria-label={t('articlesList.filterBy')}>
           {projects.map((proj) => (
             <button
               key={proj}
@@ -69,11 +71,11 @@ export function ArticlesList({ articles, loading, error }: Props) {
               type="button"
               aria-pressed={activeProject === proj}
             >
-              {proj === 'ALL' ? 'All' : proj}
+              {proj === 'ALL' ? t('articlesList.filterAll') : proj}
             </button>
           ))}
         </div>
-        <SearchBar value={search} onChange={setSearch} placeholder="Search articles..." />
+        <SearchBar value={search} onChange={setSearch} />
       </div>
 
       <div
@@ -83,8 +85,13 @@ export function ArticlesList({ articles, loading, error }: Props) {
         className="sr-only"
       >
         {filtered.length === 0
-          ? 'No articles found'
-          : `${filtered.length} article${filtered.length === 1 ? '' : 's'} found`}
+          ? t('articlesList.noneFound')
+          : t(
+              filtered.length === 1
+                ? 'articlesList.resultCountSingular'
+                : 'articlesList.resultCountPlural',
+              { count: String(filtered.length) },
+            )}
       </div>
 
       {filtered.length === 0 ? (
@@ -94,9 +101,9 @@ export function ArticlesList({ articles, loading, error }: Props) {
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
             <line x1="8" y1="11" x2="14" y2="11" />
           </svg>
-          <p>No articles found</p>
+          <p>{t('articlesList.noneFound')}</p>
           <p className="state-message__detail">
-            {search ? 'Try a different search term' : 'No articles have been published yet'}
+            {search ? t('articlesList.tryDifferent') : t('articlesList.emptyDetail')}
           </p>
         </div>
       ) : (

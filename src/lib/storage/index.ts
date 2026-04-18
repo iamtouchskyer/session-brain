@@ -13,4 +13,11 @@ export function createAdapter(backend?: StorageBackend): StorageAdapter {
   }
 }
 
-export type { StorageAdapter, ArticleIndex, ArticleMeta } from './types'
+export type {
+  StorageAdapter,
+  ArticleIndex,
+  ArticleIndexEntry,
+  ArticleIndexEntryLegacy,
+  ArticleMeta,
+  LangMeta,
+} from './types'

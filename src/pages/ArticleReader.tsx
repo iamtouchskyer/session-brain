@@ -3,7 +3,7 @@ import type { SessionArticle } from '../pipeline/types'
 import { loadArticle } from '../lib/data'
 import { ProjectBadge } from '../components/ProjectBadge'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
-import { navigate } from '../lib/router'
+import { navigate, useLang } from '../lib/router'
 import { useAuth } from '../lib/auth'
 import { GRADIENTS, DEFAULT_GRADIENT } from '../lib/gradients'
 
@@ -293,6 +293,7 @@ export function ArticleReader({ slug }: Props) {
   const shareButtonRef = useRef<HTMLButtonElement>(null)
 
   const { user } = useAuth()
+  const lang = useLang()
 
   const handleCloseShare = useCallback(() => {
     setShareOpen(false)
@@ -303,14 +304,14 @@ export function ArticleReader({ slug }: Props) {
   useEffect(() => {
     setLoading(true)
     setError(null)
-    loadArticle(slug)
+    loadArticle(slug, lang)
       .then((a) => {
         setArticle(a)
         window.scrollTo(0, 0)
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false))
-  }, [slug])
+  }, [slug, lang])
 
   // Reset hero image error when article changes
   useEffect(() => { setHeroImgError(false) }, [slug])

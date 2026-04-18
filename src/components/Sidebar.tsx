@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import type { RefObject } from 'react'
 import type { ArticleMeta } from '../lib/storage/types'
+import { useLang } from '../lib/router'
+import { useT } from '../lib/i18n'
 
 interface SidebarProps {
   articles: ArticleMeta[]
@@ -87,6 +89,9 @@ export function Sidebar({
   onProjectClick,
   onTagClick,
 }: SidebarProps) {
+  const lang = useLang()
+  const t = useT()
+  const langPrefix = `#/${lang}`
   // Projects with article counts
   const projects = useMemo(() => {
     const map = new Map<string, number>()
@@ -123,9 +128,9 @@ export function Sidebar({
   }, [articles])
 
   const navLinks = [
-    { label: 'Articles', href: '#/', path: '/', icon: <IconGrid /> },
-    { label: 'Timeline', href: '#/timeline', path: '/timeline', icon: <IconClock /> },
-    { label: 'Shares', href: '#/settings/shares', path: '/settings/shares', icon: <IconShare /> },
+    { label: t('nav.articles'), href: `${langPrefix}/`, path: '/', icon: <IconGrid /> },
+    { label: t('nav.timeline'), href: `${langPrefix}/timeline`, path: '/timeline', icon: <IconClock /> },
+    { label: t('nav.shares'), href: `${langPrefix}/settings/shares`, path: '/settings/shares', icon: <IconShare /> },
   ]
 
   const isActive = (path: string) => {
@@ -140,14 +145,14 @@ export function Sidebar({
     >
       {/* Header: logo + collapse toggle */}
       <div className="sidebar__header">
-        <a href="#/" className="sidebar__brand" aria-label="Logex home">
+        <a href={`${langPrefix}/`} className="sidebar__brand" aria-label="Logex home">
           <span className="sidebar__brand-icon"><IconLogex /></span>
           {!collapsed && <span className="sidebar__brand-text">Logex</span>}
         </a>
         <button
           className="sidebar__toggle"
           onClick={onToggleCollapse}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
           type="button"
         >
           {collapsed ? <IconChevronRight /> : <IconChevronLeft />}
@@ -176,7 +181,7 @@ export function Sidebar({
         {projects.length > 0 && (
           <div className="sidebar__section">
             {!collapsed && (
-              <p className="sidebar__section-heading">Projects</p>
+              <p className="sidebar__section-heading">{t('sidebar.projects')}</p>
             )}
             <ul className="sidebar__list">
               {projects.map(([name, count]) => (
@@ -205,7 +210,7 @@ export function Sidebar({
         {tags.length > 0 && (
           <div className="sidebar__section">
             {!collapsed && (
-              <p className="sidebar__section-heading">Tags</p>
+              <p className="sidebar__section-heading">{t('sidebar.tags')}</p>
             )}
             <ul className="sidebar__list">
               {tags.map(([tag, count]) => (
@@ -233,11 +238,11 @@ export function Sidebar({
         {/* Stats */}
         {!collapsed && (
           <div className="sidebar__section sidebar__section--stats">
-            <p className="sidebar__section-heading">Stats</p>
+            <p className="sidebar__section-heading">{t('sidebar.stats')}</p>
             <div className="sidebar__stats">
               <div className="sidebar__stat-chip">
                 <span className="sidebar__stat-value">{stats.articles}</span>
-                <span className="sidebar__stat-label">articles</span>
+                <span className="sidebar__stat-label">{t('sidebar.stat.articles')}</span>
               </div>
               <div className="sidebar__stat-chip">
                 <span className="sidebar__stat-value">
@@ -245,11 +250,11 @@ export function Sidebar({
                     ? `${(stats.tokens / 1000).toFixed(1)}k`
                     : stats.tokens}
                 </span>
-                <span className="sidebar__stat-label">tokens</span>
+                <span className="sidebar__stat-label">{t('sidebar.stat.tokens')}</span>
               </div>
               <div className="sidebar__stat-chip sidebar__stat-chip--cost">
                 <span className="sidebar__stat-value">${stats.cost.toFixed(2)}</span>
-                <span className="sidebar__stat-label">cost</span>
+                <span className="sidebar__stat-label">{t('sidebar.stat.cost')}</span>
               </div>
             </div>
           </div>
@@ -284,7 +289,7 @@ export function Sidebar({
             className="sidebar__close-btn"
             onClick={onMobileClose}
             type="button"
-            aria-label="Close navigation"
+            aria-label={t('sidebar.closeNav')}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -295,7 +300,7 @@ export function Sidebar({
         {/* Mobile sidebar — never collapsed */}
         <aside className="sidebar" aria-label="Mobile navigation">
           <div className="sidebar__header">
-            <a href="#/" className="sidebar__brand" aria-label="Logex home" onClick={onMobileClose}>
+            <a href={`${langPrefix}/`} className="sidebar__brand" aria-label="Logex home" onClick={onMobileClose}>
               <span className="sidebar__brand-icon"><IconLogex /></span>
               <span className="sidebar__brand-text">Logex</span>
             </a>
@@ -319,7 +324,7 @@ export function Sidebar({
           <div className="sidebar__body">
             {projects.length > 0 && (
               <div className="sidebar__section">
-                <p className="sidebar__section-heading">Projects</p>
+                <p className="sidebar__section-heading">{t('sidebar.projects')}</p>
                 <ul className="sidebar__list">
                   {projects.map(([name, count]) => (
                     <li key={name}>
@@ -340,7 +345,7 @@ export function Sidebar({
 
             {tags.length > 0 && (
               <div className="sidebar__section">
-                <p className="sidebar__section-heading">Tags</p>
+                <p className="sidebar__section-heading">{t('sidebar.tags')}</p>
                 <ul className="sidebar__list">
                   {tags.map(([tag, count]) => (
                     <li key={tag}>
@@ -360,11 +365,11 @@ export function Sidebar({
             )}
 
             <div className="sidebar__section sidebar__section--stats">
-              <p className="sidebar__section-heading">Stats</p>
+              <p className="sidebar__section-heading">{t('sidebar.stats')}</p>
               <div className="sidebar__stats">
                 <div className="sidebar__stat-chip">
                   <span className="sidebar__stat-value">{stats.articles}</span>
-                  <span className="sidebar__stat-label">articles</span>
+                  <span className="sidebar__stat-label">{t('sidebar.stat.articles')}</span>
                 </div>
                 <div className="sidebar__stat-chip">
                   <span className="sidebar__stat-value">
@@ -372,11 +377,11 @@ export function Sidebar({
                       ? `${(stats.tokens / 1000).toFixed(1)}k`
                       : stats.tokens}
                   </span>
-                  <span className="sidebar__stat-label">tokens</span>
+                  <span className="sidebar__stat-label">{t('sidebar.stat.tokens')}</span>
                 </div>
                 <div className="sidebar__stat-chip sidebar__stat-chip--cost">
                   <span className="sidebar__stat-value">${stats.cost.toFixed(2)}</span>
-                  <span className="sidebar__stat-label">cost</span>
+                  <span className="sidebar__stat-label">{t('sidebar.stat.cost')}</span>
                 </div>
               </div>
             </div>

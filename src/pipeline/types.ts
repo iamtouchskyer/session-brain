@@ -66,8 +66,18 @@ export interface CardIndex {
   lastUpdated: string
 }
 
+/**
+ * Supported content languages.
+ * `zh` = Simplified Chinese, `en` = English.
+ * Primary language = detected from session; the other is LLM-translated.
+ */
+export type Lang = 'zh' | 'en'
+
+export const SUPPORTED_LANGS: readonly Lang[] = ['zh', 'en'] as const
+
 export interface SessionArticle {
   slug: string           // e.g. "2026-04-14-logex-opc-loop"
+  lang?: Lang            // content language of this article body; optional for legacy articles
   title: string          // e.g. "Logex: 从 spike 到产品的 OPC Loop"
   summary: string        // 2-3 sentence executive summary
   body: string           // Full markdown article body
